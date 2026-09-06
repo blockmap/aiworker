@@ -19,7 +19,7 @@ fi
 echo "########## custom vscode extension ########## "
 # Batch 1 - brand rename on ext files. Specific patterns BEFORE generic ones
 # so github.com/openchamber/* isn't clobbered before it can match.
-find ${baseDir}/ -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "*.mdx" -o -name "*.md" \) -not -path "*/node_modules/*" -exec sed -i.bak \
+find ${baseDir}/ -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.html" -o -name "*.mjs" -o -name "*.json" -o -name "*.mdx" -o -name "*.md" \) -not -path "*/node_modules/*" -exec sed -i.bak \
   -e 's#github.com/openchamber/openchamber#roweb.cn/roweb/aiworker#g' \
   -e 's#OPENCHAMBER#AIWORKER#g' \
   -e 's#openchamber#aiworker#g' \
@@ -35,13 +35,14 @@ find ${baseDir}/ -type f \( -name "index.html" -o -name "cli-args.js" \) -not -p
   {} +
 
 # filter - undo over-renamed identifiers that should stay openchamber-*
-find ${baseDir}/ -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "*.mdx" -o -name "*.md" \) -not -path "*/node_modules/*" -exec sed -i.bak \
+find ${baseDir}/ -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.mjs"  -o -name "*.html" -o -name "*.json" -o -name "*.mdx" -o -name "*.md" \) -not -path "*/node_modules/*" -exec sed -i.bak \
   -e 's#aiworkerConfig#openchamberConfig#g' \
   -e 's#aiworkerEvents#openchamberEvents#g' \
   -e 's#aiworker-route#openchamber-route#g' \
   -e 's#aiworker-logo#openchamber-logo#g' \
   -e 's#aiworker-#openchamber-#g' \
   -e 's#/aiworker#/openchamber#g' \
+  -e 's#@aiworker/web#@openchamber/web#g' \
   -e 's#AiWorkerLogo#OpenChamberLogo#g' \
   -e 's#AiWorkerPage#OpenChamberPage#g' \
   -e 's#AiWorkerTools#OpenChamberTools#g' \
