@@ -42,7 +42,6 @@ find ${baseDir}/ -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -na
   -e 's#aiworker-logo#openchamber-logo#g' \
   -e 's#aiworker-#openchamber-#g' \
   -e 's#/aiworker#/openchamber#g' \
-  -e 's#@aiworker/web#@openchamber/web#g' \
   -e 's#AiWorkerLogo#OpenChamberLogo#g' \
   -e 's#AiWorkerPage#OpenChamberPage#g' \
   -e 's#AiWorkerTools#OpenChamberTools#g' \
