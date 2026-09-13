@@ -64,7 +64,7 @@ find ${baseDir}/ui/src/lib/i18n/messages/ -type f -name "zh-CN.ts" -not -path "*
 echo "########## zh-CN labels to Simplified Chinese ########## "
 # Batch 4 - remaining zh-CN labels translated to Simplified Chinese
 # Value-only sed replacements on zh-CN.ts; keys and literal terms stay untouched.
-find ${baseDir}/ui/src/lib/i18n/messages/ -type f -name "zh-CN.ts" -not -path "*/node_modules/*" -exec sed -i.bak 
+find ${baseDir}/ui/src/lib/i18n/messages/ -type f -name "zh-CN.ts" -not -path "*/node_modules/*" -exec sed -i.bak \
   -e "s#'common.language.english': 'English'#'common.language.english': '英语'#g" \
   -e "s#'gitView.history.actions.cherryPick': 'Cherry-pick'#'gitView.history.actions.cherryPick': '拣选'#g" \
   -e "s#'gitView.history.actions.reset': 'Reset...'#'gitView.history.actions.reset': '重置...'#g" \
