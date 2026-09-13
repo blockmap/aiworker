@@ -16,6 +16,7 @@ else
   xsed='sed -i'
 fi  
 
+cp ${baseDir}/vscode/README_zh.md ${baseDir}/vscode/README.md 
 echo "########## custom vscode extension ########## "
 # Batch 1 - brand rename on ext files. Specific patterns BEFORE generic ones
 # so github.com/openchamber/* isn't clobbered before it can match.
