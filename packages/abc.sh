@@ -20,12 +20,15 @@ cp ${baseDir}/vscode/README_zh.md ${baseDir}/vscode/README.md
 echo "########## custom vscode extension ########## "
 # Batch 1 - brand rename on ext files. Specific patterns BEFORE generic ones
 # so github.com/openchamber/* isn't clobbered before it can match.
-find ${baseDir}/ -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.html" -o -name "*.mjs" -o -name "*.json" -o -name "*.mdx" -o -name "*.md" \) -not -path "*/node_modules/*" -exec sed -i.bak \
-  -e 's#github.com/openchamber/openchamber#roweb.cn/roweb/aiworker#g' \
+find ${baseDir}/ -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.html" -o -name "*.mjs" -o -name "*.json" -o -name "*.mdx" -o -name "*.md"  -o -name "*.zig" \) -not -path "*/node_modules/*" -exec sed -i.bak \
+  -e 's#github.com/openchamber/openchamber#roweb.cn/roweb/aihander#g' \
+  -e 's#https://x.com/openchamber_dev#https://map.roweb.cn/aihander#g' \
   -e 's#OPENCHAMBER#AIWORKER#g' \
   -e 's#openchamber#aiworker#g' \
   -e 's#OpenChamber#AiWorker#g' \
   -e 's#fedaykindev#roweb#g' \
+  -e 's#https://discord.gg/ZYRSdnwwKA#https://map.roweb.cn#g' \
+  -e 's#<span>Discord</span>#<span>HOME</span>#g' \
   {} +
 
 # Batch 2 - index.html and cli-args.js (path undo comes after lowercase→aiworker)
@@ -60,6 +63,7 @@ find ${baseDir}/ui/src/lib/i18n/messages/ -type f -name "zh-CN.ts" -not -path "*
   -e "s#'chat.draftPresets.plan.label': 'Start feature planning'#'chat.draftPresets.plan.label': '开始功能规划'#g" \
   -e "s#'chat.draftPresets.debug.label': 'Debug an issue'#'chat.draftPresets.debug.label': '调试问题'#g" \
   -e "s#'chat.draftPresets.review.label': 'Review my changes'#'chat.draftPresets.review.label': '审查我的更改'#g" \
+  -e "s#为社区用心打造#智能研发工作台#g" \
   {} +
 
 echo "########## zh-CN labels to Simplified Chinese ########## "
