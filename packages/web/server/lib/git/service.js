@@ -2277,7 +2277,10 @@ export async function getStatus(directory, options = {}) {
     // Use -uall to show all untracked files individually, not just directories
     const status = await git.status(['-uall']);
 
-    // Light mode: skip numstat + new-file line counting for faster response
+    // Light mode: skip numstat + new-file line counting for faster response.
+    // Staged (`--cached`: HEAD -> index) and working (`--numstat`: index -> worktree)
+    // stay in separate maps. A partially staged file has an entry in both, and the
+    // UI shows each row's own scope instead of a combined total.
     const [stagedStatsRaw, workingStatsRaw] = lightMode
       ? ['', '']
       : await Promise.all([
@@ -2285,9 +2288,10 @@ export async function getStatus(directory, options = {}) {
           git.raw(['diff', '--numstat']).catch(() => ''),
         ]);
 
-    const diffStatsMap = new Map();
+    const stagedDiffStats = {};
+    const workingDiffStats = {};
 
-    const accumulateStats = (raw) => {
+    const accumulateStats = (raw, target) => {
       if (!raw) return;
       raw
         .split('\n')
@@ -2306,18 +2310,18 @@ export async function getStatus(directory, options = {}) {
           const insertions = insertionsRaw === '-' ? 0 : parseInt(insertionsRaw, 10) || 0;
           const deletions = deletionsRaw === '-' ? 0 : parseInt(deletionsRaw, 10) || 0;
 
-          const existing = diffStatsMap.get(path) || { insertions: 0, deletions: 0 };
-          diffStatsMap.set(path, {
+          const existing = target[path] || { insertions: 0, deletions: 0 };
+          target[path] = {
             insertions: existing.insertions + insertions,
             deletions: existing.deletions + deletions,
-          });
+          };
         });
     };
 
-    accumulateStats(stagedStatsRaw);
-    accumulateStats(workingStatsRaw);
+    accumulateStats(stagedStatsRaw, stagedDiffStats);
+    accumulateStats(workingStatsRaw, workingDiffStats);
 
-    const diffStats = Object.fromEntries(diffStatsMap.entries());
+    const diffStats = { staged: stagedDiffStats, working: workingDiffStats };
 
     const MAX_NEW_FILE_STATS = 200;
     const MAX_NEW_FILE_STAT_SIZE = 1024 * 1024;
@@ -2337,7 +2341,10 @@ export async function getStatus(directory, options = {}) {
           continue;
         }
 
-        const existing = diffStats[file.path];
+        // Untracked and working-tree-added files belong to the working scope;
+        // a file whose 'A' code is on the index belongs to the staged scope.
+        const target = working === '?' || working === 'A' ? workingDiffStats : stagedDiffStats;
+        const existing = target[file.path];
         if (existing && existing.insertions > 0) {
           continue;
         }
@@ -2353,6 +2360,7 @@ export async function getStatus(directory, options = {}) {
           const buffer = await fsp.readFile(absolutePath);
           if (buffer.indexOf(0) !== -1) {
             newFileStats.push({
+              target,
               path: file.path,
               insertions: existing?.insertions ?? 0,
               deletions: existing?.deletions ?? 0,
@@ -2363,6 +2371,7 @@ export async function getStatus(directory, options = {}) {
           const normalized = buffer.toString('utf8').replace(/\r\n/g, '\n');
           if (!normalized.length) {
             newFileStats.push({
+              target,
               path: file.path,
               insertions: 0,
               deletions: 0,
@@ -2377,6 +2386,7 @@ export async function getStatus(directory, options = {}) {
 
           const lineCount = segments.length;
           newFileStats.push({
+            target,
             path: file.path,
             insertions: lineCount,
             deletions: 0,
@@ -2390,7 +2400,7 @@ export async function getStatus(directory, options = {}) {
     }
 
     for (const entry of newFileStats) {
-      diffStats[entry.path] = {
+      entry.target[entry.path] = {
         insertions: entry.insertions,
         deletions: entry.deletions,
       };
@@ -3450,26 +3460,45 @@ export async function push(directory, options = {}) {
     );
   };
 
-  const normalizePushResult = (result) => {
+  const remote = String(options.remote || '').trim();
+  const status = await git.status();
+  const config = await git.listConfig();
+  const remotes = await git.getRemotes(true);
+  const remoteName = remote
+    || config.all[`branch.${status.current}.pushremote`]
+    || config.all['remote.pushdefault']
+    || config.all[`branch.${status.current}.remote`]
+    || (remotes.length === 1 ? remotes[0].name : 'origin');
+
+  const pushTo = async (target, branch, pushOptions) => {
+    // simple-git drops forced updates and puts no-ops in `pushed`. Read Git's
+    // porcelain status flags so feedback reflects actual remote ref changes.
+    let output = '';
+    git.outputHandler((_command, stdout) => {
+      stdout.on('data', (chunk) => { output += chunk.toString(); });
+    });
+    const result = await git.push(target, branch, pushOptions);
+    const pushed = [];
+    for (const line of output.split(/\r?\n/)) {
+      const match = /^([ *+\-])\t([^:]*):([^\t]+)\t/.exec(line);
+      if (match) {
+        pushed.push({ local: match[2], remote: remoteName });
+      }
+    }
     return {
       success: true,
-      pushed: result.pushed,
-      repo: result.repo,
-      ref: result.ref,
+      pushed,
+      repo: result.repo || directory,
+      ref: result.ref || null,
     };
   };
 
-  const remote = String(options.remote || '').trim();
-
   if (!remote && !options.branch) {
     try {
-      await git.push();
-      return {
-        success: true,
-        pushed: [],
-        repo: directory,
-        ref: null,
-      };
+      const pushOptions = status.current && !status.tracking
+        ? buildUpstreamOptions(options.options)
+        : options.options || {};
+      return await pushTo(undefined, undefined, pushOptions);
     } catch (error) {
       if (!looksLikeMissingUpstream(error)) {
         const message = describePushError(error);
@@ -3478,17 +3507,13 @@ export async function push(directory, options = {}) {
       }
 
       try {
-        const status = await git.status();
         const branch = status.current;
-        const remotes = await git.getRemotes(true);
-        const fallbackRemote = remotes.find((entry) => entry.name === 'origin')?.name || remotes[0]?.name;
-        if (!branch || !fallbackRemote) {
+        if (!branch || !remoteName) {
           const message = describePushError(error);
           throw new Error(message);
         }
 
-        const result = await git.push(fallbackRemote, branch, buildUpstreamOptions(options.options));
-        return normalizePushResult(result);
+        return await pushTo(remoteName, branch, buildUpstreamOptions(options.options));
       } catch (fallbackError) {
         const message = describePushError(fallbackError);
         console.error('Failed to push (including upstream fallback):', fallbackError);
@@ -3497,26 +3522,14 @@ export async function push(directory, options = {}) {
     }
   }
 
-  const remoteName = remote || 'origin';
-
   // If caller didn't specify a branch, this is the common "Push"/"Commit & Push" path.
   // When there's no upstream yet (typical for freshly-created worktree branches), publish it on first push.
-  if (!options.branch) {
-    try {
-      const status = await git.status();
-      if (status.current && !status.tracking) {
-        const result = await git.push(remoteName, status.current, buildUpstreamOptions(options.options));
-        return normalizePushResult(result);
-      }
-    } catch (error) {
-      // If we can't read status, fall back to the regular push path below.
-      console.warn('Failed to read git status before push:', error);
-    }
+  if (!options.branch && status.current && !status.tracking) {
+    return pushTo(remoteName, status.current, buildUpstreamOptions(options.options));
   }
 
   try {
-    const result = await git.push(remoteName, options.branch, options.options || {});
-    return normalizePushResult(result);
+    return await pushTo(remoteName, options.branch, options.options || {});
   } catch (error) {
     // Last-resort fallback: retry with upstream if the error suggests it's missing.
     if (!looksLikeMissingUpstream(error)) {
@@ -3526,15 +3539,13 @@ export async function push(directory, options = {}) {
     }
 
     try {
-      const status = await git.status();
       const branch = options.branch || status.current;
       if (!branch) {
         console.error('Failed to push: missing branch name for upstream setup:', error);
         throw error;
       }
 
-      const result = await git.push(remoteName, branch, buildUpstreamOptions(options.options));
-      return normalizePushResult(result);
+      return await pushTo(remoteName, branch, buildUpstreamOptions(options.options));
     } catch (fallbackError) {
       const message = describePushError(fallbackError);
       console.error('Failed to push (including upstream fallback):', fallbackError);

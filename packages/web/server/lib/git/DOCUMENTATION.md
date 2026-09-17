@@ -83,6 +83,17 @@ bootstrap, tracking is left unset rather than writing `branch.*.remote` /
 - `removeRemote(directory, options)`: Remove a configured remote (except `origin`).
 - `deleteRemoteBranch(directory, options)`: Delete a remote branch.
 
+`push` leaves an unspecified destination to Git, including `branch.<name>.pushRemote`
+and `remote.pushDefault`. Its missing-upstream fallback uses that same destination;
+an explicit remote overrides configuration. `pushed` contains only refs changed by
+the operation, derived from Git's porcelain flags, including first publication,
+fast-forward and forced updates. Each entry's `remote` is the destination remote
+name, not a ref. A successful no-op returns an empty array; rejected pushes throw.
+Commit & Push and Sync share the same fetch/pull/push flow in web, Electron and
+mobile, and never infer publication from an upstream `ahead` count. Fetch follows
+the selected upstream while push routing remains independent. VS Code does not
+mount these Git panels and keeps its separate extension-host Git implementation.
+
 ### Log Operations
 - `getLog(directory, options)`: Get commit history with stats (supports maxCount, from, to, file filters).
 - `getCommitFiles(directory, commitHash)`: Get file changes for a specific commit relative to its first parent, or the empty tree for a root commit. NUL-delimited paths preserve whitespace; renamed files return their destination in `path` and source in `previousPath`.
@@ -132,7 +143,7 @@ The following functions are internal helpers used by exported functions:
 - `upstreamComparison`: Optional comparison against `upstream/<current-branch>`, with `{ remote, branch, ahead, behind }`.
 - `files`: Array of file objects with `path`, `index`, `working_dir` status codes.
 - `isClean`: Boolean indicating if working tree is clean.
-- `diffStats`: Object mapping file paths to `{ insertions, deletions }`.
+- `diffStats`: Scope-aware per-file line stats, `{ staged, working }`. `staged` is HEAD → index (`git diff --cached --numstat`), `working` is index → working tree (`git diff --numstat`). A partially staged file appears in both maps with its own scope's counts; the two are never summed together. Untracked and working-tree-added files are counted into `working`; files added to the index are counted into `staged`.
 - `mergeInProgress`: Object with `{ head, message }` if merge in progress.
 - `rebaseInProgress`: Object with `{ headName, onto }` if rebase in progress.
 
@@ -168,6 +179,7 @@ The following functions are internal helpers used by exported functions:
   surface and VS Code does not mount these controls.
 - Untracked patches from `getDiff` and `getUntrackedDiffs` use `git diff --no-index` with separate stdout, stderr, and process exit status. Exit codes 0 and 1 return stdout only, so line-ending warnings never become patch text or request failures. Other exits and process failures reject the single-file request; the batch keeps an empty entry for the failed path and preserves the other results.
 - `status.files` exposes both `index` and `working_dir` codes. Shared UI uses these as separate scopes: staged rows are derived from non-empty `index` statuses, while unstaged rows are derived from `working_dir` statuses and untracked files.
+- `status.diffStats` follows the same scopes (`staged`, `working`), so a staged row shows HEAD → index counts and an unstaged row shows index → working-tree counts. A file with edits in both scopes reports each part in its own row instead of one combined total.
 - A file with both staged and unstaged changes can appear in both UI sections. Staged rows request diffs with `staged: true`; unstaged rows request normal working-tree diffs.
 - The shared Git panel exposes explicit staging actions. Unstaged rows use `stageFile`, staged rows use `unstageFile`, and commits operate on the current staged index.
 - `stageFiles` remains supported for callers that need to stage a selected unstaged subset as part of commit. In that mode the server temporarily unstages unrelated index entries, stages `stageFiles`, commits from the index, then restores temporarily unstaged entries.
