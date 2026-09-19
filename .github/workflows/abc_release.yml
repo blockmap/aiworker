@@ -65,7 +65,7 @@ jobs:
           if (!section) {
             throw new Error('Changelog section [' + version + '] not found. Add a section like "## [' + version + '] - YYYY-MM-DD".');
           }
-          const content = ('## ' + section).trim().replace("openchamber","aiworker").replace("OpenChamber","AiWorker");
+          const content = ('## ' + section).trim().replace("aiworker","aiworker").replace("AiWorker","AiWorker");
           fs.mkdirSync('artifacts', { recursive: true });
           fs.writeFileSync('artifacts/release-notes.md', content + '\n');
           NODE
@@ -123,16 +123,17 @@ jobs:
           npm whoami --registry "${NPM_REGISTRY}" > /dev/null
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build packages
         run: |
           node -v
           bash -x ./packages/abc.sh
+          bun install --frozen-lockfile
+
+      - name: Build packages
+        run: |
           bun run build
 
       # Both packages are packed and published with bun so the
-      # `workspace:*` link from @openchamber/web to @openchamber/sdk is
+      # `workspace:*` link from @aiworker/web to @aiworker/sdk is
       # rewritten to the released version. npm leaves it in place and the
       # published tarball then fails to install.
       - name: Publish SDK to npm
@@ -325,11 +326,11 @@ jobs:
       - name: Verify native Linux architecture
         env:
           EXPECTED_HOST_ARCH: ${{ matrix.host_arch }}
-          OPENCHAMBER_TARGET_ARCH: ${{ matrix.arch }}
+          AIWORKER_TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           test "$(uname -m)" = "$EXPECTED_HOST_ARCH"
-          test "$(node -p 'process.arch')" = "$OPENCHAMBER_TARGET_ARCH"
+          test "$(node -p 'process.arch')" = "$AIWORKER_TARGET_ARCH"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -358,7 +359,7 @@ jobs:
       - name: Build and package Linux AppImage
         working-directory: packages/electron
         env:
-          OPENCHAMBER_TARGET_ARCH: ${{ matrix.arch }}
+          AIWORKER_TARGET_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           bun run build:web-assets
@@ -378,7 +379,7 @@ jobs:
           MANIFEST: ${{ matrix.manifest }}
         run: |
           set -euo pipefail
-          APPIMAGE="dist/OpenChamber-${VERSION}-linux-${ARTIFACT_ARCH}.AppImage"
+          APPIMAGE="dist/AiWorker-${VERSION}-linux-${ARTIFACT_ARCH}.AppImage"
           node ./scripts/verify-update-manifest.mjs "dist/${MANIFEST}" "$APPIMAGE" "$VERSION"
 
       - name: Upload validated Linux release files
@@ -386,7 +387,7 @@ jobs:
         with:
           name: linux-release-${{ matrix.arch }}
           path: |
-            packages/electron/dist/OpenChamber-${{ needs.create-release.outputs.version }}-linux-${{ matrix.artifact_arch }}.AppImage
+            packages/electron/dist/AiWorker-${{ needs.create-release.outputs.version }}-linux-${{ matrix.artifact_arch }}.AppImage
             packages/electron/dist/${{ matrix.manifest }}
           if-no-files-found: error
           retention-days: 1
@@ -416,11 +417,11 @@ jobs:
           set -euo pipefail
           node packages/electron/scripts/verify-update-manifest.mjs \
             artifacts/x64/latest-linux.yml \
-            "artifacts/x64/OpenChamber-${VERSION}-linux-x86_64.AppImage" \
+            "artifacts/x64/AiWorker-${VERSION}-linux-x86_64.AppImage" \
             "$VERSION"
           node packages/electron/scripts/verify-update-manifest.mjs \
             artifacts/arm64/latest-linux-arm64.yml \
-            "artifacts/arm64/OpenChamber-${VERSION}-linux-arm64.AppImage" \
+            "artifacts/arm64/AiWorker-${VERSION}-linux-arm64.AppImage" \
             "$VERSION"
 
       - name: Upload Linux AppImages and manifests to release
@@ -429,9 +430,9 @@ jobs:
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
           files: |
-            artifacts/x64/OpenChamber-${{ needs.create-release.outputs.version }}-linux-x86_64.AppImage
+            artifacts/x64/AiWorker-${{ needs.create-release.outputs.version }}-linux-x86_64.AppImage
             artifacts/x64/latest-linux.yml
-            artifacts/arm64/OpenChamber-${{ needs.create-release.outputs.version }}-linux-arm64.AppImage
+            artifacts/arm64/AiWorker-${{ needs.create-release.outputs.version }}-linux-arm64.AppImage
             artifacts/arm64/latest-linux-arm64.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -457,7 +458,7 @@ jobs:
         env:
           LATEST_YML_DIR: ${{ github.workspace }}/artifacts
           GH_REPO: ${{ github.repository }}
-          OPENCHAMBER_VERSION: ${{ needs.create-release.outputs.version }}
+          AIWORKER_VERSION: ${{ needs.create-release.outputs.version }}
         run: node packages/electron/scripts/finalize-latest-yml.mjs
 
       - name: Upload combined manifests to release
@@ -489,9 +490,9 @@ jobs:
           (async () => {
           const { REPOSITORY: repo, VERSION: version, GITHUB_TOKEN: token } = process.env;
           const expected = [
-            `OpenChamber-${version}-linux-x86_64.AppImage`,
+            `AiWorker-${version}-linux-x86_64.AppImage`,
             'latest-linux.yml',
-            `OpenChamber-${version}-linux-arm64.AppImage`,
+            `AiWorker-${version}-linux-arm64.AppImage`,
             'latest-linux-arm64.yml',
           ];
           const response = await fetch(`https://api.github.com/repos/${repo}/releases/tags/v${version}`, {
