@@ -49,6 +49,7 @@ jobs:
           fi
 
       - name: Extract changelog for release
+        id: release_notes
         env:
           VERSION: ${{ steps.get_version.outputs.version }}
         run: |
@@ -101,7 +102,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Configure npm auth for Bun
-        if: ${{ !github.event.inputs.dry_run }}
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -138,7 +139,7 @@ jobs:
       # rewritten to the released version. npm leaves it in place and the
       # published tarball then fails to install.
       - name: Publish SDK to npm
-        if: ${{ !github.event.inputs.dry_run }}
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         working-directory: packages/sdk
         env:
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -149,7 +150,7 @@ jobs:
         run: bun pm pack
 
       - name: Upload npm tarball to release
-        if: ${{ !github.event.inputs.dry_run }}
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
@@ -158,7 +159,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to npm
-        if: ${{ !github.event.inputs.dry_run }}
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         working-directory: packages/web
         env:
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -269,7 +270,11 @@ jobs:
         working-directory: packages/electron
         shell: bash
         env:
+          # Cross-compile for ARM64 target from x64 runner.
           ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
+        # npmRebuild=false in package.json, so electron-builder won't
+        # recompile native deps on its own — we must rebuild against the
+        # target Electron ABI before packaging.
         run: node ./scripts/rebuild-native.mjs
 
       - name: Build Windows app
@@ -426,7 +431,7 @@ jobs:
             "$VERSION"
 
       - name: Upload Linux AppImages and manifests to release
-        if: ${{ !github.event.inputs.dry_run }}
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
