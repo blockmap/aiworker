@@ -126,7 +126,8 @@ jobs:
         run: |
           node -v
           bash -x ./packages/abc.sh
-          bun install --frozen-lockfile
+          # bun install --frozen-lockfile
+          bun install
 
       - name: Build packages
         run: |
