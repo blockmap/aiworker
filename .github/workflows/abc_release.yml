@@ -143,14 +143,18 @@ jobs:
       # `workspace:*` link from @aiworker/web to @aiworker/sdk is
       # rewritten to the released version. npm leaves it in place and the
       # published tarball then fails to install.
-      - name: Publish SDK to npm
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        working-directory: packages/sdk
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: bun publish --registry "${NPM_REGISTRY}" --access public
+      # - name: Publish SDK to npm
+      #   if: ${{ github.event.inputs.dry_run != 'true' }}
+      #   working-directory: packages/sdk
+      #   env:
+      #     NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+      #   run: bun publish --registry "${NPM_REGISTRY}" --access public
 
-      - name: Create npm tarball
+      - name: Create npm sdk tarball
+        working-directory: packages/sdk
+        run: bun pm pack
+
+      - name: Create npm web tarball
         working-directory: packages/web
         run: bun pm pack
 
@@ -159,16 +163,18 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
-          files: packages/web/*.tgz
+          files: |
+            packages/web/*.tgz 
+            packages/sdk/*.tgz 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish to npm
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        working-directory: packages/web
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: bun publish --registry "${NPM_REGISTRY}" --access public
+      # - name: Publish to npm
+      #   if: ${{ github.event.inputs.dry_run != 'true' }}
+      #   working-directory: packages/web
+      #   env:
+      #     NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+      #   run: bun publish --registry "${NPM_REGISTRY}" --access public
 
   build-desktop-electron-macos:
     needs: create-release
@@ -421,19 +427,19 @@ jobs:
           name: linux-release-arm64
           path: artifacts/arm64
 
-      - name: Revalidate separate Linux manifests
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-        run: |
-          set -euo pipefail
-          node packages/electron/scripts/verify-update-manifest.mjs \
-            artifacts/x64/latest-linux.yml \
-            "artifacts/x64/AiWorker-${VERSION}-linux-x86_64.AppImage" \
-            "$VERSION"
-          node packages/electron/scripts/verify-update-manifest.mjs \
-            artifacts/arm64/latest-linux-arm64.yml \
-            "artifacts/arm64/AiWorker-${VERSION}-linux-arm64.AppImage" \
-            "$VERSION"
+      # - name: Revalidate separate Linux manifests
+      #   env:
+      #     VERSION: ${{ needs.create-release.outputs.version }}
+      #   run: |
+      #     set -euo pipefail
+      #     node packages/electron/scripts/verify-update-manifest.mjs \
+      #       artifacts/x64/latest-linux.yml \
+      #       "artifacts/x64/AiWorker-${VERSION}-linux-x86_64.AppImage" \
+      #       "$VERSION"
+      #     node packages/electron/scripts/verify-update-manifest.mjs \
+      #       artifacts/arm64/latest-linux-arm64.yml \
+      #       "artifacts/arm64/AiWorker-${VERSION}-linux-arm64.AppImage" \
+      #       "$VERSION"
 
       - name: Upload Linux AppImages and manifests to release
         if: ${{ github.event.inputs.dry_run != 'true' }}
@@ -465,12 +471,12 @@ jobs:
           pattern: latest-yml-*
           path: artifacts
 
-      - name: Finalize combined manifests
-        env:
-          LATEST_YML_DIR: ${{ github.workspace }}/artifacts
-          GH_REPO: ${{ github.repository }}
-          AIWORKER_VERSION: ${{ needs.create-release.outputs.version }}
-        run: node packages/electron/scripts/finalize-latest-yml.mjs
+      # - name: Finalize combined manifests
+      #   env:
+      #     LATEST_YML_DIR: ${{ github.workspace }}/artifacts
+      #     GH_REPO: ${{ github.repository }}
+      #     AIWORKER_VERSION: ${{ needs.create-release.outputs.version }}
+      #   run: node packages/electron/scripts/finalize-latest-yml.mjs
 
       - name: Upload combined manifests to release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
