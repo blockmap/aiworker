@@ -85,6 +85,9 @@ jobs:
   publish-npm:
     needs: create-release
     runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      NPM_REGISTRY: https://registry.npmjs.org
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -97,19 +100,27 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Configure npm authentication for Bun
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Configure npm auth for Bun
+        if: ${{ !github.event.inputs.dry_run }}
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "$NPM_TOKEN" || { echo "NPM_TOKEN secret is not configured" >&2; exit 1; }
+          test -n "${NPM_TOKEN:-}" || { echo "NPM_TOKEN secret is not configured" >&2; exit 1; }
+          mkdir -p "$HOME"
           cat > "$HOME/.npmrc" <<EOF
-          registry=https://registry.npmjs.org/
+          registry=${NPM_REGISTRY}
           //registry.npmjs.org/:_authToken=${NPM_TOKEN}
           always-auth=true
           EOF
           chmod 600 "$HOME/.npmrc"
+          echo "npm config ready"
+
+      - name: Validate npm auth
+        if: ${{ !github.event.inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm whoami --registry "${NPM_REGISTRY}" > /dev/null
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -119,21 +130,24 @@ jobs:
           node -v
           bash -x ./packages/abc.sh
           bun run build
+
       # Both packages are packed and published with bun so the
       # `workspace:*` link from @openchamber/web to @openchamber/sdk is
       # rewritten to the released version. npm leaves it in place and the
       # published tarball then fails to install.
       - name: Publish SDK to npm
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        if: ${{ !github.event.inputs.dry_run }}
         working-directory: packages/sdk
-        run: bun publish --registry https://registry.npmjs.org --access public
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bun publish --registry "${NPM_REGISTRY}" --access public
 
       - name: Create npm tarball
         working-directory: packages/web
         run: bun pm pack
 
       - name: Upload npm tarball to release
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        if: ${{ !github.event.inputs.dry_run }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
@@ -142,9 +156,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to npm
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        if: ${{ !github.event.inputs.dry_run }}
         working-directory: packages/web
-        run: bun publish --registry https://registry.npmjs.org --access public
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bun publish --registry "${NPM_REGISTRY}" --access public
 
   build-desktop-electron-macos:
     needs: create-release
@@ -190,116 +206,8 @@ jobs:
           restore-keys: |
             opencode-cli-${{ runner.os }}-${{ matrix.arch }}-
 
-      # - name: Install Apple Certificate
-      #   env:
-      #     APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      #     APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      #   run: |
-      #     KEYCHAIN_PATH=$RUNNER_TEMP/electron-signing.keychain-db
-      #     KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-
-      #     security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-      #     security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-      #     security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-      #     echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-      #     security import "$RUNNER_TEMP/certificate.p12" \
-      #       -P "$APPLE_CERTIFICATE_PASSWORD" \
-      #       -A -t cert -f pkcs12 \
-      #       -k "$KEYCHAIN_PATH"
-
-      #     security list-keychain -d user -s "$KEYCHAIN_PATH"
-      #     security set-key-partition-list -S apple-tool:,apple:,codesign: \
-      #       -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-      # - name: Build Electron app
-      #   working-directory: packages/electron
-      #   env:
-      #     APPLE_ID: ${{ secrets.APPLE_ID }}
-      #     APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      #     APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      #     # rebuild-native.mjs reads this to target the right arch when
-      #     # cross-building (runner is arm64; x64 matrix needs the hint).
-      #     ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
-      #   run: |
-      #     bun run build:web-assets
-      #     bun run prepare:opencode-cli
-      #     bun run verify:opencode-cli
-      #     bun run bundle:main
-      #     # npmRebuild=false in package.json, so electron-builder won't
-      #     # recompile native deps on its own — we must rebuild against the
-      #     # target Electron ABI before packaging, otherwise node-pty/bun-pty
-      #     # crash on require inside the packaged app.
-      #     bun run rebuild:native
-      #     bunx electron-builder --mac --${{ matrix.arch }} --publish=never
-      #     bun run verify:opencode-cli:packaged
-
-      # - name: Verify signature + entitlements + notarization
-      #   run: |
-      #     set -euo pipefail
-
-      #     APP_DIR="packages/electron/dist/mac"
-      #     [ -d "packages/electron/dist/mac-arm64" ] && APP_DIR="packages/electron/dist/mac-arm64"
-
-      #     APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
-      #     if [ -z "$APP_PATH" ]; then
-      #       echo "Error: .app not found under packages/electron/dist/mac*"
-      #       ls -la packages/electron/dist/
-      #       exit 1
-      #     fi
-
-      #     echo "Verifying $APP_PATH"
-      #     codesign -vv --deep --strict "$APP_PATH"
-
-      #     # Require hardened runtime
-      #     CS_INFO=$(codesign -dv --verbose=4 "$APP_PATH" 2>&1)
-      #     echo "$CS_INFO"
-      #     if ! echo "$CS_INFO" | grep -q "flags=.*runtime"; then
-      #       echo "Error: hardened runtime flag missing"
-      #       exit 1
-      #     fi
-
-      #     # Require notary ticket stapled
-      #     xcrun stapler validate "$APP_PATH"
-
-      #     ENTITLEMENTS=$(codesign -d --entitlements :- "$APP_PATH" 2>&1 || true)
-      #     if echo "$ENTITLEMENTS" | grep -q "com.apple.security.app-sandbox"; then
-      #       echo "Error: app sandbox entitlement is present"
-      #       exit 1
-      #     fi
-      #     for key in \
-      #       com.apple.security.cs.allow-jit \
-      #       com.apple.security.cs.allow-unsigned-executable-memory \
-      #       com.apple.security.cs.disable-library-validation
-      #     do
-      #       if ! echo "$ENTITLEMENTS" | grep -q "<key>$key</key>"; then
-      #         echo "Error: required entitlement missing: $key"
-      #         exit 1
-      #       fi
-      #     done
-
-      # - name: Upload DMG / ZIP / blockmaps to release
-      #   uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-      #   with:
-      #     tag_name: v${{ needs.create-release.outputs.version }}
-      #     files: |
-      #       packages/electron/dist/*.dmg
-      #       packages/electron/dist/*.zip
-      #       packages/electron/dist/*.blockmap
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Upload per-arch latest-mac.yml for merge
-      #   uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      #   with:
-      #     name: latest-yml-${{ matrix.target }}
-      #     path: packages/electron/dist/latest-mac.yml
-      #     retention-days: 1
-
   build-desktop-electron-windows:
     needs: create-release
-    # windows-latest currently resolves to a runner with Visual Studio 18,
-    # which this electron/node-gyp stack does not detect correctly.
     runs-on: windows-2022
     strategy:
       fail-fast: false
@@ -359,11 +267,7 @@ jobs:
         working-directory: packages/electron
         shell: bash
         env:
-          # Cross-compile for ARM64 target from x64 runner.
           ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
-        # npmRebuild=false in package.json, so electron-builder won't
-        # recompile native deps on its own — we must rebuild against the
-        # target Electron ABI before packaging.
         run: node ./scripts/rebuild-native.mjs
 
       - name: Build Windows app
@@ -520,7 +424,7 @@ jobs:
             "$VERSION"
 
       - name: Upload Linux AppImages and manifests to release
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        if: ${{ !github.event.inputs.dry_run }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
@@ -567,17 +471,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # mobile-release:
-  #   needs: create-release
-  #   if: ${{ github.event.inputs.dry_run != 'true' }}
-  #   uses: ./.github/workflows/mobile-release.yml
-  #   with:
-  #     version_name: ${{ needs.create-release.outputs.version }}
-  #     build_number: ${{ github.run_number }}
-  #     release_tag: v${{ needs.create-release.outputs.version }}
-  #     upload_github_release: true
-  #   secrets: inherit
-
   finalize-release:
     needs: [create-release, build-desktop-electron-macos, build-desktop-electron-windows, build-desktop-electron-linux, publish-electron-linux, publish-npm, combine-electron-manifests]
     runs-on: ubuntu-latest
@@ -586,7 +479,7 @@ jobs:
       DISCORD_UPDATE_ROLE_ID: ${{ secrets.DISCORD_UPDATE_ROLE_ID }}
     steps:
       - name: Verify final Linux release asset inventory
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        if: ${{ !github.event.inputs.dry_run }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
@@ -627,96 +520,3 @@ jobs:
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Send release to Discord
-      #   if: ${{ env.DISCORD_WEBHOOK_URL != '' }}
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     VERSION: ${{ needs.create-release.outputs.version }}
-      #     REPOSITORY: ${{ github.repository }}
-      #     UPDATE_ROLE_ID: ${{ env.DISCORD_UPDATE_ROLE_ID }}
-      #   run: |
-      #     node - <<'NODE'
-      #     (async () => {
-      #       const tag = `v${process.env.VERSION}`;
-      #       const repo = process.env.REPOSITORY;
-      #       const rawRoleId = (process.env.UPDATE_ROLE_ID || '').trim();
-      #       const updateRoleId = /^\d+$/.test(rawRoleId) ? rawRoleId : '';
-
-      #       const releaseRes = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, {
-      #         headers: {
-      #           Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-      #           Accept: 'application/vnd.github+json',
-      #         },
-      #       });
-
-      #       if (!releaseRes.ok) {
-      #         const body = await releaseRes.text();
-      #         throw new Error(`Failed to fetch release ${tag}: ${releaseRes.status} ${body}`);
-      #       }
-
-      #       const release = await releaseRes.json();
-      #       const description = (release.body || `OpenChamber ${tag} released.`).slice(0, 4096);
-      #       const mention = updateRoleId ? `<@&${updateRoleId}>` : '';
-
-      #       const payload = {
-      #         username: 'OpenChamber Releases',
-      #         ...(mention ? { content: mention } : {}),
-      #         ...(updateRoleId
-      #           ? {
-      #               allowed_mentions: {
-      #                 roles: [updateRoleId],
-      #               },
-      #             }
-      #           : {}),
-      #         embeds: [
-      #           {
-      #             title: release.name || `OpenChamber ${tag}`,
-      #             url: release.html_url,
-      #             description,
-      #             color: 2105893,
-      #             footer: { text: 'OpenChamber Changelog' },
-      #           },
-      #         ],
-      #       };
-
-      #       const discordRes = await fetch(process.env.DISCORD_WEBHOOK_URL, {
-      #         method: 'POST',
-      #         headers: { 'content-type': 'application/json' },
-      #         body: JSON.stringify(payload),
-      #       });
-
-      #       if (!discordRes.ok) {
-      #         const body = await discordRes.text();
-      #         throw new Error(`Failed to send Discord release: ${discordRes.status} ${body}`);
-      #       }
-      #     })().catch((error) => {
-      #       console.error(error);
-      #       process.exit(1);
-      #     });
-      #     NODE
-
-      # - name: Trigger openchamber-website site refresh (optional)
-      #   env:
-      #     WEBSITE_REPO: openchamber/openchamber-website
-      #     WEBSITE_TOKEN: ${{ secrets.OPENCHAMBER_WEBSITE_REPO_TOKEN }}
-      #     VERSION: ${{ needs.create-release.outputs.version }}
-      #   run: |
-      #     if [ -z "$WEBSITE_TOKEN" ]; then
-      #       echo "OPENCHAMBER_WEBSITE_REPO_TOKEN not set; skip site refresh dispatch."
-      #       exit 0
-      #     fi
-
-      #     curl --fail-with-body -sS -X POST \
-      #       -H "Authorization: Bearer $WEBSITE_TOKEN" \
-      #       -H "Accept: application/vnd.github+json" \
-      #       "https://api.github.com/repos/$WEBSITE_REPO/dispatches" \
-      #       -d @- <<JSON
-      #     {
-      #       "event_type": "site_refresh_requested",
-      #       "client_payload": {
-      #         "source_repo": "${{ github.repository }}",
-      #         "release_tag": "v$VERSION"
-      #       }
-      #     }
-      #     JSON
