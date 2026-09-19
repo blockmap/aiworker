@@ -97,6 +97,20 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Configure npm authentication for Bun
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$NPM_TOKEN" || { echo "NPM_TOKEN secret is not configured" >&2; exit 1; }
+          cat > "$HOME/.npmrc" <<EOF
+          registry=https://registry.npmjs.org/
+          //registry.npmjs.org/:_authToken=${NPM_TOKEN}
+          always-auth=true
+          EOF
+          chmod 600 "$HOME/.npmrc"
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -112,9 +126,7 @@ jobs:
       - name: Publish SDK to npm
         if: ${{ github.event.inputs.dry_run != 'true' }}
         working-directory: packages/sdk
-        run: bun publish --access public
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bun publish --registry https://registry.npmjs.org --access public
 
       - name: Create npm tarball
         working-directory: packages/web
@@ -132,9 +144,7 @@ jobs:
       - name: Publish to npm
         if: ${{ github.event.inputs.dry_run != 'true' }}
         working-directory: packages/web
-        run: bun publish --access public
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bun publish --registry https://registry.npmjs.org --access public
 
   build-desktop-electron-macos:
     needs: create-release
