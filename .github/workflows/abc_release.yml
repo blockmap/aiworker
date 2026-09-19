@@ -103,14 +103,17 @@ jobs:
 
       - name: Configure npm auth for Bun
         if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_REGISTRY: ${{ env.NPM_REGISTRY }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${NPM_TOKEN:-}" || { echo "NPM_TOKEN secret is not configured" >&2; exit 1; }
+          test -n "${NPM_CONFIG_TOKEN:-}" || { echo "NPM_CONFIG_TOKEN secret is not configured" >&2; exit 1; }
           mkdir -p "$HOME"
           cat > "$HOME/.npmrc" <<EOF
           registry=${NPM_REGISTRY}
-          //registry.npmjs.org/:_authToken=${NPM_TOKEN}
+          //registry.npmjs.org/:_authToken=${NPM_CONFIG_TOKEN}
           always-auth=true
           EOF
           chmod 600 "$HOME/.npmrc"
@@ -119,6 +122,8 @@ jobs:
       - name: Validate npm auth
         if: ${{ !github.event.inputs.dry_run }}
         shell: bash
+        env:
+          NPM_REGISTRY: ${{ env.NPM_REGISTRY }}
         run: |
           set -euo pipefail
           npm whoami --registry "${NPM_REGISTRY}" > /dev/null
