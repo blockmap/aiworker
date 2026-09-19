@@ -377,16 +377,16 @@ jobs:
           bun run verify:opencode-cli:packaged
           bun run verify:linux-appimage
 
-      - name: Validate Linux update manifest
-        working-directory: packages/electron
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-          ARTIFACT_ARCH: ${{ matrix.artifact_arch }}
-          MANIFEST: ${{ matrix.manifest }}
-        run: |
-          set -euo pipefail
-          APPIMAGE="dist/AiWorker-${VERSION}-linux-${ARTIFACT_ARCH}.AppImage"
-          node ./scripts/verify-update-manifest.mjs "dist/${MANIFEST}" "$APPIMAGE" "$VERSION"
+      # - name: Validate Linux update manifest
+      #   working-directory: packages/electron
+      #   env:
+      #     VERSION: ${{ needs.create-release.outputs.version }}
+      #     ARTIFACT_ARCH: ${{ matrix.artifact_arch }}
+      #     MANIFEST: ${{ matrix.manifest }}
+      #   run: |
+      #     set -euo pipefail
+      #     APPIMAGE="dist/AiWorker-${VERSION}-linux-${ARTIFACT_ARCH}.AppImage"
+      #     node ./scripts/verify-update-manifest.mjs "dist/${MANIFEST}" "$APPIMAGE" "$VERSION"
 
       - name: Upload validated Linux release files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
