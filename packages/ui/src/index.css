@@ -503,6 +503,12 @@ svg.animate-spin {
   -webkit-app-region: drag;
 }
 
+/* Native drag regions still intercept pointer input beneath portal dialogs.
+   Restore them when the last dialog closes. */
+.oc-dialog-open .app-region-drag {
+  -webkit-app-region: no-drag;
+}
+
 .app-region-no-drag {
   -webkit-app-region: no-drag;
 }
@@ -1089,15 +1095,15 @@ html:not(.dark) .chat-scroll {
   font-size: var(--text-code) !important;
 }
 
-.question-markdown > .markdown-content.markdown-tool {
+.form-markdown > .markdown-content.markdown-tool {
   font-size: inherit !important;
 }
 
-.question-markdown > .markdown-content > [data-md-block]:first-child > :first-child {
+.form-markdown > .markdown-content > [data-md-block]:first-child > :first-child {
   margin-top: 0;
 }
 
-.question-markdown > .markdown-content > [data-md-block]:last-child > :last-child {
+.form-markdown > .markdown-content > [data-md-block]:last-child > :last-child {
   margin-bottom: 0;
 }
 
