@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': 'Tümünü seç',
   'settings.themeImport.deselectAll': 'Tümünün seçimini kaldır',
@@ -1086,7 +1087,6 @@ export const settingsDict = {
   'settings.openchamber.spaces.field.enabled': 'Ajanların yalıtılmış alanlarda çalışmasına izin ver',
   'settings.openchamber.spaces.field.enabledAria': 'Ajanların yalıtılmış alanlarda çalışmasına izin ver',
   'settings.openchamber.spaces.field.enabledInfo': 'Yalıtılmış alan, projenin bir kopyasını içeren bir kapsayıcıdır; ajan burada makinenize, diğer projelerinize veya anahtarlarınıza erişmeden çalışır. İşi bittiğinde yaptıklarını projenize uygular ya da atarsınız. Bu bilgisayarda Docker gerektirir ve ilk seferde yaklaşık 1,6 GB boyutunda bir imaj indirir.',
-  'settings.openchamber.spaces.field.enabledRestart': 'OpenChamber yeniden başlatıldıktan sonra geçerli olur.',
   'settings.openchamber.tools.title': 'OpenChamber Araçları',
   'settings.openchamber.tools.field.agentControlTool': 'Agent kontrol aracı',
   'settings.openchamber.tools.field.agentControlToolAria': 'Agent kontrol aracını etkinleştir',
@@ -1474,7 +1474,7 @@ export const settingsDict = {
   'settings.providers.page.custom.error.required': 'Zorunlu',
   'settings.providers.page.custom.error.duplicate': 'Yinelenen',
   'settings.providers.page.custom.error.apiKey.required': 'API anahtarı veya {env:VAR_NAME} gerekli',
-  'settings.providers.page.custom.authFailure.configAfterAuth': 'Kimlik bilgileri kaydedildi ancak provider yapılandırması kaydedilmedi. Hatayı düzeltip yeniden deneyin ya da kısmi kaydı temizlemek için bağlantıyı kesin.',
+  'settings.providers.page.custom.authFailure.keyAfterConfig': 'Provider kaydedildi ancak API anahtarı kaydedilmedi. Anahtarı yeniden denemek için tekrar kaydedin veya provider’ı kaldırmak için bağlantıyı kesin.',
   'settings.providers.page.auth.title': 'Kimlik doğrulama',
   'settings.providers.page.auth.loadingMethods': 'Kimlik doğrulama yöntemleri yükleniyor...',
   'settings.providers.page.auth.apiKeyLabel': 'API Anahtarı',
@@ -2295,8 +2295,9 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sessionTabsAria': 'Başlıktaki session sekmelerini aç/kapat',
   'settings.openchamber.visual.field.sessionTabsInfo': 'Açtığınız session\'lar başlıkta sekmeler olarak dizilir. Kapatırsanız düz session başlığına döner.',
   'settings.page.integrations.title': 'Entegrasyonlar',
-  'settings.page.integrations.description': 'OpenChamber’ın issue’lar ve pull request’lerle çalışabilmesi için GitHub ve Linear’ı bağlayın.',
+  'settings.page.integrations.description': 'OpenChamber’ın birlikte çalıştığı hizmetleri ve abonelikleri bağlayın.',
   ...linearIntegrationI18n.tr,
+  ...thirdPartyIntegrationI18n.tr,
   'settings.agents.page.field.steps': 'En fazla adım',
   'settings.agents.page.field.stepsTooltip': 'Ajanın bir turda durmadan önce yapabileceği araç adımı sayısı.',
   'settings.agents.page.field.clearStepsAria': 'En fazla adımı temizle',
@@ -2332,4 +2333,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': 'Tam bir http:// veya https:// adresi girin.',
   ...guestIntegrationsI18n.tr,
   ...extensionsSettingsI18n.tr,
+  'settings.magicPrompts.page.block.codeFusionInstructions': 'Kod fusion talimatları',
 };

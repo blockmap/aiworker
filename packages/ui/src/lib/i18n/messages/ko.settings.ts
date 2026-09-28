@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': '모두 선택',
   'settings.themeImport.deselectAll': '모두 선택 해제',
@@ -1058,7 +1059,6 @@ export const settingsDict = {
   'settings.openchamber.spaces.field.enabled': '에이전트가 격리 공간에서 작업하도록 허용',
   'settings.openchamber.spaces.field.enabledAria': '에이전트가 격리 공간에서 작업하도록 허용',
   'settings.openchamber.spaces.field.enabledInfo': '격리 공간은 프로젝트 사본이 들어 있는 컨테이너로, 에이전트는 사용자의 컴퓨터, 다른 프로젝트, 키에 접근하지 않고 그 안에서 작업합니다. 작업이 끝나면 결과를 프로젝트에 적용하거나 폐기합니다. 이 컴퓨터에 Docker가 필요하며 처음에는 약 1.6 GB의 이미지를 다운로드합니다.',
-  'settings.openchamber.spaces.field.enabledRestart': 'OpenChamber를 다시 시작한 후에 적용됩니다.',
   'settings.openchamber.tools.title': 'OpenChamber 도구',
   'settings.openchamber.tools.field.agentControlTool': '에이전트 제어 도구',
   'settings.openchamber.tools.field.agentControlToolAria': '에이전트 제어 도구 활성화',
@@ -1522,7 +1522,7 @@ export const settingsDict = {
   'settings.providers.page.custom.error.required': '필수',
   'settings.providers.page.custom.error.duplicate': '중복',
   'settings.providers.page.custom.error.apiKey.required': 'API 키 또는 {env:VAR_NAME}이(가) 필요합니다',
-  'settings.providers.page.custom.authFailure.configAfterAuth': '자격 증명은 저장되었지만 공급자 구성은 저장되지 않았습니다. 오류를 수정한 뒤 다시 시도하거나, 연결을 해제하여 부분 저장을 지우세요.',
+  'settings.providers.page.custom.authFailure.keyAfterConfig': '공급자는 저장되었지만 API 키는 저장되지 않았습니다. 다시 저장하여 키를 재시도하거나, 연결을 해제하여 공급자를 제거하세요.',
 
 
   'settings.providers.page.auth.title': '인증',
@@ -2305,10 +2305,11 @@ export const settingsDict = {
   'settings.openchamber.visual.option.enterToSend.enter.label': 'Enter로 전송',
   'settings.openchamber.visual.option.enterToSend.modifier.label': 'Ctrl/Cmd+Enter로 전송',
   ...linearIntegrationI18n.ko,
+  ...thirdPartyIntegrationI18n.ko,
   ...guestIntegrationsI18n.ko,
   ...extensionsSettingsI18n.ko,
   'settings.page.integrations.title': '통합',
-  'settings.page.integrations.description': 'GitHub와 Linear를 연결하면 OpenChamber가 이슈와 풀 리퀘스트를 다룰 수 있습니다.',
+  'settings.page.integrations.description': 'OpenChamber와 함께 쓰는 서비스와 구독을 연결합니다.',
   'settings.agents.page.field.steps': '최대 단계 수',
   'settings.agents.page.field.stepsTooltip': '에이전트가 한 턴에서 수행할 수 있는 도구 단계 수입니다.',
   'settings.agents.page.field.clearStepsAria': '최대 단계 수 지우기',
@@ -2342,4 +2343,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlHint': 'OAuth 또는 OpenID Connect 인증 서버 메타데이터 문서입니다. MCP 서버가 인증 서버를 명시하는 보호 리소스 메타데이터를 게시하지 않을 때 설정하세요.',
   'settings.mcp.page.advanced.oauthMetadataUrlPlaceholder': 'https://example.com/.well-known/oauth-authorization-server',
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': 'http:// 또는 https://로 시작하는 전체 주소를 입력하세요.',
+  'settings.magicPrompts.page.block.codeFusionInstructions': '코드 fusion 지침',
 } as const;

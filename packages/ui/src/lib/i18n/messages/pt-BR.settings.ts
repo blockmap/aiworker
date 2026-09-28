@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': 'Selecionar tudo',
   'settings.themeImport.deselectAll': 'Desmarcar tudo',
@@ -1058,7 +1059,6 @@ export const settingsDict = {
   "settings.openchamber.spaces.field.enabled": "Permitir que agentes trabalhem em espaços isolados",
   "settings.openchamber.spaces.field.enabledAria": "Permitir que agentes trabalhem em espaços isolados",
   "settings.openchamber.spaces.field.enabledInfo": "Um espaço isolado é um contêiner com uma cópia do projeto, onde o agente trabalha sem acessar sua máquina, seus outros projetos ou suas chaves. Quando ele termina, você aplica o trabalho ao seu projeto ou o descarta. Precisa do Docker neste computador e baixa uma imagem de cerca de 1,6 GB na primeira vez.",
-  "settings.openchamber.spaces.field.enabledRestart": "Passa a valer depois que o OpenChamber reiniciar.",
   "settings.openchamber.tools.title": "Ferramentas do OpenChamber",
   "settings.openchamber.tools.field.agentControlTool": "Ferramenta de controle para agentes",
   "settings.openchamber.tools.field.agentControlToolAria": "Ativar a ferramenta de controle para agentes",
@@ -1522,7 +1522,7 @@ export const settingsDict = {
   "settings.providers.page.custom.error.required": "Obrigatório",
   "settings.providers.page.custom.error.duplicate": "Duplicado",
   "settings.providers.page.custom.error.apiKey.required": "É necessária uma chave de API ou {env:VAR_NAME}",
-  "settings.providers.page.custom.authFailure.configAfterAuth": "As credenciais foram salvas, mas a configuração do provedor não. Corrija o erro e tente novamente, ou desconecte para limpar o salvamento parcial.",
+  "settings.providers.page.custom.authFailure.keyAfterConfig": "O provedor foi salvo, mas a chave de API não. Salve novamente para tentar a chave outra vez ou desconecte para remover o provedor.",
 
 
   "settings.providers.page.auth.title": "Autenticação",
@@ -2305,10 +2305,11 @@ export const settingsDict = {
   "settings.openchamber.visual.option.enterToSend.enter.label": "Enviar com Enter",
   "settings.openchamber.visual.option.enterToSend.modifier.label": "Enviar com Ctrl/Cmd+Enter",
   ...linearIntegrationI18n['pt-BR'],
+  ...thirdPartyIntegrationI18n['pt-BR'],
   ...guestIntegrationsI18n['pt-BR'],
   ...extensionsSettingsI18n['pt-BR'],
   'settings.page.integrations.title': 'Integrações',
-  'settings.page.integrations.description': 'Conecte o GitHub e o Linear para que o OpenChamber possa trabalhar com suas issues e pull requests.',
+  'settings.page.integrations.description': 'Conecte os serviços e assinaturas com os quais o OpenChamber trabalha.',
   'settings.agents.page.field.steps': 'Passos máximos',
   'settings.agents.page.field.stepsTooltip': 'Quantos passos de ferramenta o agente pode dar em um turno antes de precisar parar.',
   'settings.agents.page.field.clearStepsAria': 'Limpar passos máximos',
@@ -2342,4 +2343,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlHint': 'O documento de metadados do servidor de autorização OAuth ou OpenID Connect. Defina quando o servidor MCP não publicar metadados de recurso protegido que nomeiem seu servidor de autorização.',
   'settings.mcp.page.advanced.oauthMetadataUrlPlaceholder': 'https://example.com/.well-known/oauth-authorization-server',
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': 'Informe um endereço http:// ou https:// completo.',
+  'settings.magicPrompts.page.block.codeFusionInstructions': 'Instruções de fusion de código',
 } as const;

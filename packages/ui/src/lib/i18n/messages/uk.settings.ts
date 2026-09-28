@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': 'Вибрати всі',
   'settings.themeImport.deselectAll': 'Зняти вибір',
@@ -1058,7 +1059,6 @@ export const settingsDict = {
   "settings.openchamber.spaces.field.enabled": "Дозволити агентам працювати в ізольованих просторах",
   "settings.openchamber.spaces.field.enabledAria": "Дозволити агентам працювати в ізольованих просторах",
   "settings.openchamber.spaces.field.enabledInfo": "Ізольований простір — це контейнер із копією проєкту, де агент працює без доступу до вашого комп’ютера, інших проєктів і ключів. Коли він закінчить, ви застосуєте його роботу до проєкту або відкинете її. Потрібен Docker на цьому комп’ютері; першого разу завантажується образ розміром близько 1,6 ГБ.",
-  "settings.openchamber.spaces.field.enabledRestart": "Набуде чинності після перезапуску OpenChamber.",
   "settings.openchamber.tools.title": "Інструменти OpenChamber",
   "settings.openchamber.tools.field.agentControlTool": "Інструмент керування для агентів",
   "settings.openchamber.tools.field.agentControlToolAria": "Увімкнути інструмент керування для агентів",
@@ -1522,7 +1522,7 @@ export const settingsDict = {
   "settings.providers.page.custom.error.required": "Обов’язково",
   "settings.providers.page.custom.error.duplicate": "Дублікат",
   "settings.providers.page.custom.error.apiKey.required": "Потрібен API-ключ або {env:VAR_NAME}",
-  "settings.providers.page.custom.authFailure.configAfterAuth": "Облікові дані збережено, але конфігурацію провайдера — ні. Виправте помилку й спробуйте знову або від’єднайте, щоб очистити часткове збереження.",
+  "settings.providers.page.custom.authFailure.keyAfterConfig": "Провайдера збережено, але його API-ключ — ні. Збережіть ще раз, щоб повторити спробу з ключем, або від’єднайте, щоб видалити провайдера.",
 
 
   "settings.providers.page.auth.title": "Аутентифікація",
@@ -2305,10 +2305,11 @@ export const settingsDict = {
   "settings.openchamber.visual.option.enterToSend.enter.label": "Надсилати клавішею Enter",
   "settings.openchamber.visual.option.enterToSend.modifier.label": "Надсилати за допомогою Ctrl/Cmd+Enter",
   ...linearIntegrationI18n.uk,
+  ...thirdPartyIntegrationI18n.uk,
   ...guestIntegrationsI18n.uk,
   ...extensionsSettingsI18n.uk,
   'settings.page.integrations.title': 'Інтеграції',
-  'settings.page.integrations.description': 'Підключіть GitHub і Linear, щоб OpenChamber міг працювати з вашими задачами та pull request-ами.',
+  'settings.page.integrations.description': 'Підключіть сервіси та підписки, з якими працює OpenChamber.',
   'settings.agents.page.field.steps': 'Максимум кроків',
   'settings.agents.page.field.stepsTooltip': 'Скільки кроків інструментів агент може зробити за один хід, перш ніж зупинитися.',
   'settings.agents.page.field.clearStepsAria': 'Очистити максимум кроків',
@@ -2342,4 +2343,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlHint': 'Документ метаданих сервера авторизації OAuth або OpenID Connect. Вкажіть його, якщо MCP-сервер не публікує метадані захищеного ресурсу, які називають його сервер авторизації.',
   'settings.mcp.page.advanced.oauthMetadataUrlPlaceholder': 'https://example.com/.well-known/oauth-authorization-server',
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': 'Введіть повну адресу http:// або https://.',
+  'settings.magicPrompts.page.block.codeFusionInstructions': 'Інструкції кодового fusion',
 } as const;

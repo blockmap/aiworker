@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': '全選',
   'settings.themeImport.deselectAll': '取消全選',
@@ -1032,7 +1033,6 @@ export const settingsDict = {
   'settings.openchamber.spaces.field.enabled': '允許代理在隔離空間中工作',
   'settings.openchamber.spaces.field.enabledAria': '允許代理在隔離空間中工作',
   'settings.openchamber.spaces.field.enabledInfo': '隔離空間是一個包含專案副本的容器，代理在其中工作，無法存取您的電腦、其他專案或金鑰。完成後，您可以將它的成果套用到專案中，或是捨棄。需要在這台電腦上安裝 Docker，首次使用會下載約 1.6 GB 的映像檔。',
-  'settings.openchamber.spaces.field.enabledRestart': '重新啟動 OpenChamber 後生效。',
   'settings.openchamber.tools.title': 'OpenChamber 工具',
   'settings.openchamber.tools.field.agentControlTool': '智慧代理控制工具',
   'settings.openchamber.tools.field.agentControlToolAria': '啟用智慧代理控制工具',
@@ -1427,7 +1427,7 @@ export const settingsDict = {
   'settings.providers.page.custom.error.required': '必填',
   'settings.providers.page.custom.error.duplicate': '重複',
   'settings.providers.page.custom.error.apiKey.required': '需要 API 金鑰或 {env:VAR_NAME}',
-  'settings.providers.page.custom.authFailure.configAfterAuth': '憑證已儲存，但提供者設定未儲存。請修正錯誤後再試，或中斷連線以清除部分儲存。',
+  'settings.providers.page.custom.authFailure.keyAfterConfig': '提供者已儲存，但其 API 金鑰未儲存。請再次儲存以重試金鑰，或中斷連線以移除該提供者。',
 
 
   'settings.providers.page.auth.title': '驗證',
@@ -2305,10 +2305,11 @@ export const settingsDict = {
   'settings.openchamber.visual.option.enterToSend.enter.label': '按 Enter 傳送',
   'settings.openchamber.visual.option.enterToSend.modifier.label': '按 Ctrl/Cmd+Enter 傳送',
   ...linearIntegrationI18n['zh-TW'],
+  ...thirdPartyIntegrationI18n['zh-TW'],
   ...guestIntegrationsI18n['zh-TW'],
   ...extensionsSettingsI18n['zh-TW'],
   'settings.page.integrations.title': '整合',
-  'settings.page.integrations.description': '連接 GitHub 和 Linear，讓 OpenChamber 可以處理你的 issue 和 pull request。',
+  'settings.page.integrations.description': '連接 OpenChamber 所使用的服務和訂閱。',
   'settings.agents.page.field.steps': '最大步數',
   'settings.agents.page.field.stepsTooltip': '代理在一輪中最多可以執行多少個工具步驟。',
   'settings.agents.page.field.clearStepsAria': '清除最大步數',
@@ -2342,4 +2343,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlHint': 'OAuth 或 OpenID Connect 授權伺服器中繼資料文件。當 MCP 伺服器未發布指明其授權伺服器的受保護資源中繼資料時設定。',
   'settings.mcp.page.advanced.oauthMetadataUrlPlaceholder': 'https://example.com/.well-known/oauth-authorization-server',
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': '請輸入完整的 http:// 或 https:// 位址。',
+  'settings.magicPrompts.page.block.codeFusionInstructions': '程式碼融合說明',
 } as const;

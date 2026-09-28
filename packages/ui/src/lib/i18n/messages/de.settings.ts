@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': 'Alle auswählen',
   'settings.themeImport.deselectAll': 'Auswahl aufheben',
@@ -1034,7 +1035,6 @@ export const settingsDict = {
   'settings.openchamber.spaces.field.enabled': 'Agenten in isolierten Bereichen arbeiten lassen',
   'settings.openchamber.spaces.field.enabledAria': 'Agenten in isolierten Bereichen arbeiten lassen',
   'settings.openchamber.spaces.field.enabledInfo': 'Ein isolierter Bereich ist ein Container mit einer Kopie des Projekts, in dem der Agent arbeitet, ohne auf Ihren Rechner, Ihre anderen Projekte oder Ihre Schlüssel zuzugreifen. Wenn er fertig ist, übernehmen Sie seine Arbeit in Ihr Projekt oder verwerfen sie. Benötigt Docker auf diesem Computer und lädt beim ersten Mal ein Image von etwa 1,6 GB herunter.',
-  'settings.openchamber.spaces.field.enabledRestart': 'Wird nach einem Neustart von OpenChamber wirksam.',
   'settings.openchamber.tools.title': 'OpenChamber-Werkzeuge',
   'settings.openchamber.tools.field.agentControlTool': 'Agenten-Steuerungswerkzeug',
   'settings.openchamber.tools.field.agentControlToolAria': 'Das Agenten-Steuerungswerkzeug aktivieren',
@@ -1494,7 +1494,7 @@ export const settingsDict = {
   'settings.providers.page.custom.error.required': 'Erforderlich',
   'settings.providers.page.custom.error.duplicate': 'Duplikat',
   'settings.providers.page.custom.error.apiKey.required': 'API-Schlüssel oder {env:VAR_NAME} ist erforderlich',
-  'settings.providers.page.custom.authFailure.configAfterAuth': 'Anmeldedaten wurden gespeichert, aber die Anbieterkonfiguration nicht. Beheben Sie den Fehler und versuchen Sie es erneut, oder trennen Sie die Verbindung, um den teilweisen Speichervorgang zu löschen.',
+  'settings.providers.page.custom.authFailure.keyAfterConfig': 'Der Anbieter wurde gespeichert, sein API-Schlüssel jedoch nicht. Speichern Sie erneut, um den Schlüssel noch einmal zu versuchen, oder trennen Sie die Verbindung, um den Anbieter zu entfernen.',
   'settings.providers.page.auth.title': 'Authentifizierung',
   'settings.providers.page.auth.loadingMethods': 'Lade Authentifizierungsmethoden...',
   'settings.providers.page.auth.apiKeyLabel': 'API-Schlüssel',
@@ -2296,10 +2296,11 @@ export const settingsDict = {
   'settings.openchamber.visual.option.themeMode.dark.description': 'Immer dunkles Erscheinungsbild verwenden',
   'chat.message.userText.collapseAria': 'Benutzernachricht einklappen',
   ...linearIntegrationI18n.de,
+  ...thirdPartyIntegrationI18n.de,
   ...guestIntegrationsI18n.de,
   ...extensionsSettingsI18n.de,
   'settings.page.integrations.title': 'Integrationen',
-  'settings.page.integrations.description': 'Verbinde GitHub und Linear, damit OpenChamber mit deinen Issues und Pull Requests arbeiten kann.',
+  'settings.page.integrations.description': 'Verbinde die Dienste und Abonnements, mit denen OpenChamber arbeitet.',
   'settings.agents.page.field.steps': 'Max. Schritte',
   'settings.agents.page.field.stepsTooltip': 'Wie viele Tool-Schritte der Agent in einem Zug machen darf, bevor er stoppen muss.',
   'settings.agents.page.field.clearStepsAria': 'Max. Schritte löschen',
@@ -2333,4 +2334,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlHint': 'Das Metadatendokument des OAuth- oder OpenID-Connect-Autorisierungsservers. Setze dies, wenn der MCP-Server keine Protected-Resource-Metadaten veröffentlicht, die seinen Autorisierungsserver nennen.',
   'settings.mcp.page.advanced.oauthMetadataUrlPlaceholder': 'https://example.com/.well-known/oauth-authorization-server',
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': 'Gib eine vollständige http://- oder https://-Adresse ein.',
+  'settings.magicPrompts.page.block.codeFusionInstructions': 'Anweisungen für Code-Fusion',
 };

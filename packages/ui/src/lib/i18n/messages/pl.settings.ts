@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': 'Zaznacz wszystkie',
   'settings.themeImport.deselectAll': 'Odznacz wszystkie',
@@ -920,7 +921,6 @@ export const settingsDict = {
   'settings.openchamber.spaces.field.enabled': 'Pozwól agentom pracować w izolowanych przestrzeniach',
   'settings.openchamber.spaces.field.enabledAria': 'Pozwól agentom pracować w izolowanych przestrzeniach',
   'settings.openchamber.spaces.field.enabledInfo': 'Izolowana przestrzeń to kontener z kopią projektu, w którym agent pracuje bez dostępu do Twojego komputera, innych projektów ani kluczy. Gdy skończy, zastosujesz jego pracę w projekcie albo ją odrzucisz. Wymaga Dockera na tym komputerze i za pierwszym razem pobiera obraz o rozmiarze około 1,6 GB.',
-  'settings.openchamber.spaces.field.enabledRestart': 'Zacznie działać po ponownym uruchomieniu OpenChamber.',
   'settings.openchamber.tools.title': 'Narzędzia OpenChamber',
   'settings.openchamber.tools.field.agentControlTool': 'Narzędzie sterowania dla agentów',
   'settings.openchamber.tools.field.agentControlToolAria': 'Włącz narzędzie sterowania dla agentów',
@@ -1600,7 +1600,7 @@ export const settingsDict = {
   'settings.providers.page.custom.error.required': 'Wymagane',
   'settings.providers.page.custom.error.duplicate': 'Duplikat',
   'settings.providers.page.custom.error.apiKey.required': 'Wymagany jest klucz API lub {env:VAR_NAME}',
-  'settings.providers.page.custom.authFailure.configAfterAuth': 'Poświadczenia zostały zapisane, ale konfiguracja dostawcy nie. Napraw błąd i spróbuj ponownie albo rozłącz, aby usunąć częściowy zapis.',
+  'settings.providers.page.custom.authFailure.keyAfterConfig': 'Dostawca został zapisany, ale jego klucz API nie. Zapisz ponownie, aby ponowić zapis klucza, lub rozłącz, aby usunąć dostawcę.',
 
 
   'settings.providers.page.connect.noProvidersFound': 'Nie znaleziono dostawców',
@@ -2298,10 +2298,11 @@ export const settingsDict = {
   'settings.openchamber.visual.option.enterToSend.enter.label': 'Wyślij klawiszem Enter',
   'settings.openchamber.visual.option.enterToSend.modifier.label': 'Wyślij klawiszami Ctrl/Cmd+Enter',
   ...linearIntegrationI18n.pl,
+  ...thirdPartyIntegrationI18n.pl,
   ...guestIntegrationsI18n.pl,
   ...extensionsSettingsI18n.pl,
   'settings.page.integrations.title': 'Integracje',
-  'settings.page.integrations.description': 'Połącz GitHub i Linear, aby OpenChamber mógł pracować z Twoimi issue i pull requestami.',
+  'settings.page.integrations.description': 'Połącz usługi i subskrypcje, z którymi pracuje OpenChamber.',
   'settings.appearance.language.select': 'Select language',
   'settings.openchamber.visual.field.mobileKeyboardModeAria': 'Mobile keyboard behavior',
   'settings.openchamber.visual.field.selectMobileKeyboardModePlaceholder': 'Select keyboard behavior',
@@ -2343,4 +2344,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlHint': 'Dokument metadanych serwera autoryzacji OAuth lub OpenID Connect. Ustaw go, gdy serwer MCP nie publikuje metadanych chronionego zasobu wskazujących jego serwer autoryzacji.',
   'settings.mcp.page.advanced.oauthMetadataUrlPlaceholder': 'https://example.com/.well-known/oauth-authorization-server',
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': 'Podaj pełny adres http:// lub https://.',
+  'settings.magicPrompts.page.block.codeFusionInstructions': 'Instrukcje fusion kodu',
 };

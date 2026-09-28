@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': 'すべて選択',
   'settings.themeImport.deselectAll': 'すべて選択解除',
@@ -1091,7 +1092,6 @@ export const settingsDict = {
   'settings.openchamber.spaces.field.enabled': 'エージェントに隔離スペースで作業させる',
   'settings.openchamber.spaces.field.enabledAria': 'エージェントに隔離スペースで作業させる',
   'settings.openchamber.spaces.field.enabledInfo': '隔離スペースとは、プロジェクトのコピーを含むコンテナーで、エージェントはお使いのマシン、他のプロジェクト、キーにアクセスせずにそこで作業します。作業が終わったら、その成果をプロジェクトに適用するか破棄します。このコンピューターに Docker が必要で、初回は約 1.6 GB のイメージをダウンロードします。',
-  'settings.openchamber.spaces.field.enabledRestart': 'OpenChamber の再起動後に有効になります。',
   'settings.openchamber.tools.title': 'OpenChamber ツール',
   'settings.openchamber.tools.field.agentControlTool': 'エージェント制御ツール',
   'settings.openchamber.tools.field.agentControlToolAria': 'エージェント制御ツールを有効にする',
@@ -1555,7 +1555,7 @@ export const settingsDict = {
   'settings.providers.page.custom.error.required': '必須',
   'settings.providers.page.custom.error.duplicate': '重複',
   'settings.providers.page.custom.error.apiKey.required': 'API キーまたは {env:VAR_NAME} が必要です',
-  'settings.providers.page.custom.authFailure.configAfterAuth': '認証情報は保存されましたが、プロバイダー設定は保存されませんでした。エラーを修正して再試行するか、切断して不完全な保存を削除してください。',
+  'settings.providers.page.custom.authFailure.keyAfterConfig': 'プロバイダーは保存されましたが、API キーは保存されませんでした。もう一度保存してキーを再試行するか、切断してプロバイダーを削除してください。',
 
 
   'settings.providers.page.auth.title': '認証',
@@ -2305,10 +2305,11 @@ export const settingsDict = {
   'settings.openchamber.visual.option.enterToSend.enter.label': 'Enter で送信',
   'settings.openchamber.visual.option.enterToSend.modifier.label': 'Ctrl/Cmd+Enter で送信',
   ...linearIntegrationI18n.ja,
+  ...thirdPartyIntegrationI18n.ja,
   ...guestIntegrationsI18n.ja,
   ...extensionsSettingsI18n.ja,
   'settings.page.integrations.title': '連携',
-  'settings.page.integrations.description': 'GitHub と Linear を接続すると、OpenChamber が Issue やプルリクエストを扱えるようになります。',
+  'settings.page.integrations.description': 'OpenChamber と連携するサービスやサブスクリプションを接続します。',
   'settings.agents.page.field.steps': '最大ステップ数',
   'settings.agents.page.field.stepsTooltip': 'エージェントが 1 ターンで実行できるツールステップの上限です。',
   'settings.agents.page.field.clearStepsAria': '最大ステップ数をクリア',
@@ -2342,4 +2343,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlHint': 'OAuth または OpenID Connect の認可サーバーメタデータ文書です。MCP サーバーが認可サーバーを示す保護リソースメタデータを公開していない場合に設定します。',
   'settings.mcp.page.advanced.oauthMetadataUrlPlaceholder': 'https://example.com/.well-known/oauth-authorization-server',
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': 'http:// または https:// で始まる完全なアドレスを入力してください。',
+  'settings.magicPrompts.page.block.codeFusionInstructions': 'コードフュージョンの指示',
 } as const;

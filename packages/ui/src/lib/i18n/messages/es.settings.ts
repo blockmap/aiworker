@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': 'Seleccionar todo',
   'settings.themeImport.deselectAll': 'Deseleccionar todo',
@@ -1058,7 +1059,6 @@ export const settingsDict = {
   "settings.openchamber.spaces.field.enabled": "Permitir que los agentes trabajen en espacios aislados",
   "settings.openchamber.spaces.field.enabledAria": "Permitir que los agentes trabajen en espacios aislados",
   "settings.openchamber.spaces.field.enabledInfo": "Un espacio aislado es un contenedor con una copia del proyecto, donde el agente trabaja sin acceder a tu equipo, a tus otros proyectos ni a tus claves. Cuando termina, aplicas su trabajo a tu proyecto o lo descartas. Necesita Docker en este equipo y la primera vez descarga una imagen de unos 1,6 GB.",
-  "settings.openchamber.spaces.field.enabledRestart": "Se aplica después de reiniciar OpenChamber.",
   "settings.openchamber.tools.title": "Herramientas de OpenChamber",
   "settings.openchamber.tools.field.agentControlTool": "Herramienta de control para agentes",
   "settings.openchamber.tools.field.agentControlToolAria": "Activar la herramienta de control para agentes",
@@ -1522,7 +1522,7 @@ export const settingsDict = {
   "settings.providers.page.custom.error.required": "Obligatorio",
   "settings.providers.page.custom.error.duplicate": "Duplicado",
   "settings.providers.page.custom.error.apiKey.required": "Se requiere una clave API o {env:VAR_NAME}",
-  "settings.providers.page.custom.authFailure.configAfterAuth": "Las credenciales se guardaron, pero no la configuración del proveedor. Corrige el error e inténtalo de nuevo, o desconéctalo para eliminar el guardado parcial.",
+  "settings.providers.page.custom.authFailure.keyAfterConfig": "El proveedor se guardó, pero su clave de API no. Guarda de nuevo para reintentar la clave o desconéctalo para eliminar el proveedor.",
 
 
   "settings.providers.page.auth.title": "Autenticación",
@@ -2305,10 +2305,11 @@ export const settingsDict = {
   "settings.openchamber.visual.option.enterToSend.enter.label": "Enviar con Intro",
   "settings.openchamber.visual.option.enterToSend.modifier.label": "Enviar con Ctrl/Cmd+Intro",
   ...linearIntegrationI18n.es,
+  ...thirdPartyIntegrationI18n.es,
   ...guestIntegrationsI18n.es,
   ...extensionsSettingsI18n.es,
   'settings.page.integrations.title': 'Integraciones',
-  'settings.page.integrations.description': 'Conecta GitHub y Linear para que OpenChamber pueda trabajar con tus issues y pull requests.',
+  'settings.page.integrations.description': 'Conecta los servicios y suscripciones con los que trabaja OpenChamber.',
   'settings.agents.page.field.steps': 'Pasos máximos',
   'settings.agents.page.field.stepsTooltip': 'Cuántos pasos de herramienta puede dar el agente en un turno antes de detenerse.',
   'settings.agents.page.field.clearStepsAria': 'Borrar pasos máximos',
@@ -2342,4 +2343,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlHint': 'El documento de metadatos del servidor de autorización OAuth u OpenID Connect. Defínelo cuando el servidor MCP no publique metadatos de recurso protegido que nombren su servidor de autorización.',
   'settings.mcp.page.advanced.oauthMetadataUrlPlaceholder': 'https://example.com/.well-known/oauth-authorization-server',
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': 'Introduce una dirección http:// o https:// completa.',
+  'settings.magicPrompts.page.block.codeFusionInstructions': 'Instrucciones de fusion de código',
 } as const;

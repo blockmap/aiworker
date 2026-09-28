@@ -1,6 +1,7 @@
 import { extensionsSettingsI18n } from './extensions.settings.i18n';
 import { guestIntegrationsI18n } from './guest-integrations.i18n';
 import { linearIntegrationI18n } from './linear-integration.i18n';
+import { thirdPartyIntegrationI18n } from './third-party-integrations.i18n';
 export const settingsDict = {
   'settings.themeImport.selectAll': 'Select all',
   'settings.themeImport.deselectAll': 'Deselect all',
@@ -1090,7 +1091,6 @@ export const settingsDict = {
   'settings.openchamber.spaces.field.enabled': 'Let agents work in isolated spaces',
   'settings.openchamber.spaces.field.enabledAria': 'Let agents work in isolated spaces',
   'settings.openchamber.spaces.field.enabledInfo': 'An isolated space is a container with a copy of the project, where the agent works without reaching your machine, your other projects, or your keys. When it is done, you apply its work to your project or discard it. Needs Docker on this computer and downloads an image of about 1.6 GB the first time.',
-  'settings.openchamber.spaces.field.enabledRestart': 'Takes effect after OpenChamber restarts.',
   'settings.openchamber.tools.title': 'OpenChamber Tools',
   'settings.openchamber.tools.field.agentControlTool': 'Agent control tool',
   'settings.openchamber.tools.field.agentControlToolAria': 'Enable the agent control tool',
@@ -1550,7 +1550,7 @@ export const settingsDict = {
   'settings.providers.page.custom.error.required': 'Required',
   'settings.providers.page.custom.error.duplicate': 'Duplicate',
   'settings.providers.page.custom.error.apiKey.required': 'API key or {env:VAR_NAME} is required',
-  'settings.providers.page.custom.authFailure.configAfterAuth': 'Credentials were saved, but the provider config was not. Fix the error and try again, or disconnect to clear the partial save.',
+  'settings.providers.page.custom.authFailure.keyAfterConfig': 'The provider was saved, but its API key was not. Save again to retry the key, or disconnect to remove the provider.',
   'settings.providers.page.auth.title': 'Authentication',
   'settings.providers.page.auth.loadingMethods': 'Loading authentication methods...',
   'settings.providers.page.auth.apiKeyLabel': 'API Key',
@@ -2295,10 +2295,11 @@ export const settingsDict = {
   'settings.openchamber.visual.field.inputHistoryLimitAria': 'Prompts to remember',
   'settings.openchamber.visual.field.inputHistoryLimitUnit': 'prompts',
   ...linearIntegrationI18n.en,
+  ...thirdPartyIntegrationI18n.en,
   ...guestIntegrationsI18n.en,
   ...extensionsSettingsI18n.en,
   'settings.page.integrations.title': 'Integrations',
-  'settings.page.integrations.description': 'Connect GitHub and Linear so OpenChamber can work with your issues and pull requests.',
+  'settings.page.integrations.description': 'Connect the services and subscriptions OpenChamber works with.',
   'settings.agents.page.field.steps': 'Max steps',
   'settings.agents.page.field.stepsTooltip': 'How many tool steps the agent may take in one turn before it has to stop.',
   'settings.agents.page.field.clearStepsAria': 'Clear max steps',
@@ -2332,4 +2333,5 @@ export const settingsDict = {
   'settings.mcp.page.advanced.oauthMetadataUrlHint': 'The OAuth or OpenID Connect authorization server metadata document. Set this when the MCP server does not publish protected resource metadata naming its authorization server.',
   'settings.mcp.page.advanced.oauthMetadataUrlPlaceholder': 'https://example.com/.well-known/oauth-authorization-server',
   'settings.mcp.page.advanced.oauthMetadataUrlInvalid': 'Enter a full http:// or https:// address.',
+  'settings.magicPrompts.page.block.codeFusionInstructions': 'Code Fusion Instructions',
 } as const;
