@@ -38,7 +38,7 @@ configureOpenCodeCredentials({
   ],
 });
 
-import { activateQuotaGiftReset, fetchClinePassQuota, fetchHyperQuota, fetchKimiQuota, fetchOllamaCloudQuota, fetchQuotaForProvider } from './quotaProviders';
+import { activateQuotaGiftReset, fetchClinePassQuota, fetchHyperQuota, fetchKiloQuota, fetchKimiQuota, fetchOllamaCloudQuota, fetchQuotaForProvider, fetchZenmuxQuota } from './quotaProviders';
 import { validateCredential } from './quotaCredentials';
 
 type MockResponseInit = { ok?: boolean; status?: number };
@@ -755,6 +755,15 @@ describe('Z.ai quota provider (VS Code parity)', () => {
     assert.equal(windows['MCP Tools']!.usedPercent, 0);
     assert.equal(windows['MCP Tools']!.windowSeconds, 30 * 24 * 60 * 60);
     assert.equal(windows['MCP Tools']!.resetAt, 1787128459979);
+  });
+
+  test('reports a z.ai business failure sent inside an HTTP 200 body', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({ code: 1001, msg: 'Token expired', success: false })));
+
+    const result = await fetchQuotaForProvider('zai-coding-plan');
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'Token expired');
   });
 
   test('maps CREDIT_LIMIT entries to windows with credit value labels and plan level', async () => {
@@ -1515,6 +1524,120 @@ describe('DeepSeek quota provider (VS Code parity)', () => {
   });
 });
 
+describe('Cursor quota provider (VS Code parity)', () => {
+  // readCredential reads the cursor credential from the isolated data directory.
+  const cursorCredentialPath = path.join(temporaryQuotaDataDirectory, 'quota', 'cursor.json');
+  beforeEach(() => {
+    fs.mkdirSync(path.dirname(cursorCredentialPath), { recursive: true });
+    fs.writeFileSync(cursorCredentialPath, JSON.stringify({ accessToken: 'test-token' }));
+  });
+  afterEach(() => {
+    fs.rmSync(cursorCredentialPath, { force: true });
+  });
+
+  const routeCursorApi = (routes: Record<string, { status?: number; body?: unknown }>, capture?: (url: string, body: string) => void): void => {
+    globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+      const target = String(url);
+      const match = Object.entries(routes).find(([fragment]) => target.includes(fragment));
+      capture?.(target, typeof init?.body === 'string' ? init.body : '');
+      if (!match) return mockResponse({}, { status: 404 });
+      const { status = 200, body = {} } = match[1];
+      return mockResponse(body, { status });
+    }) as typeof fetch;
+  };
+
+  const sparseEnterpriseUsage = { billingCycleStart: '1787932328088', billingCycleEnd: '1787932328088', displayThreshold: 100 };
+
+  const enterpriseRoutes: Record<string, { status?: number; body?: unknown }> = {
+    GetCurrentPeriodUsage: { body: sparseEnterpriseUsage },
+    GetPlanInfo: { body: { planInfo: { planName: 'Enterprise', price: 'Custom', billingCycleEnd: '1788220800000' } } },
+    GetCreditGrantsBalance: { body: {} },
+    full_stripe_profile: { body: { teamId: 424242, isTeamMember: true, membershipType: 'enterprise' } },
+    'auth/usage': { body: { 'gpt-4': { numRequests: 590, maxRequestUsage: 1000 } } },
+    GetHardLimit: { body: { hardLimit: 12500, hardLimitPerUser: 250 } },
+    GetTeamSpend: { body: { teamMemberSpend: [] } },
+    GetMe: { body: { userId: 424242, teamId: 424242, isEnterpriseUser: true } },
+  };
+
+  test('keeps the planUsage path for Pro accounts', async () => {
+    const urls: string[] = [];
+    routeCursorApi({ GetCurrentPeriodUsage: { body: { enabled: true, planUsage: { totalPercentUsed: 42 }, billingCycleEnd: '1788220800000' } } }, (url) => { urls.push(url); });
+
+    const result = await fetchQuotaForProvider('cursor');
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(urls.sort(), [
+      `${'https://api2.cursor.sh'}/aiserver.v1.DashboardService/GetCreditGrantsBalance`,
+      `${'https://api2.cursor.sh'}/aiserver.v1.DashboardService/GetCurrentPeriodUsage`,
+      `${'https://api2.cursor.sh'}/aiserver.v1.DashboardService/GetPlanInfo`,
+    ]);
+    assert.equal(result.usage!.windows.billing_cycle!.usedPercent, 42);
+  });
+
+  test('falls back to auth/usage and team-scoped GetHardLimit for enterprise accounts', async () => {
+    let hardLimitBody = '';
+    routeCursorApi(enterpriseRoutes, (url, body) => {
+      if (url.includes('GetHardLimit')) hardLimitBody = body;
+    });
+
+    const result = await fetchQuotaForProvider('cursor');
+
+    assert.equal(result.ok, true);
+    assert.equal(result.providerName, 'Cursor Enterprise');
+    assert.equal(result.usage!.windows.billing_cycle!.valueLabel, '590 / 1000');
+    assert.equal(result.usage!.windows.billing_cycle!.usedPercent, 59);
+    assert.equal(result.usage!.windows.on_demand, undefined);
+    assert.equal(hardLimitBody, JSON.stringify({ teamId: '424242' }));
+  });
+
+  test('reports on-demand spend from GetTeamSpend matched by userId', async () => {
+    routeCursorApi({
+      ...enterpriseRoutes,
+      GetTeamSpend: { body: { teamMemberSpend: [{ userId: 999999, spendCents: 100 }, { userId: 424242, spendCents: 672 }] } },
+    });
+
+    const result = await fetchQuotaForProvider('cursor');
+
+    assert.equal(result.ok, true);
+    assert.equal(result.usage!.windows.on_demand!.valueLabel, '$6.72 / $250.00');
+    assert.equal(result.usage!.windows.on_demand!.usedPercent, 2.688);
+  });
+
+  test('picks the largest request bucket and skips metadata', async () => {
+    routeCursorApi({
+      ...enterpriseRoutes,
+      'auth/usage': { body: { startOfMonth: '2026-08-01', 'gpt-4o': { numRequests: 120, maxRequestUsage: 500 }, 'gpt-4': { numRequests: 829, maxRequestUsage: 1000 } } },
+    });
+
+    const result = await fetchQuotaForProvider('cursor');
+
+    assert.equal(result.ok, true);
+    assert.equal(result.usage!.windows.billing_cycle!.valueLabel, '829 / 1000');
+  });
+
+  test('does not report success from plan name alone', async () => {
+    routeCursorApi({
+      GetCurrentPeriodUsage: { body: sparseEnterpriseUsage },
+      GetPlanInfo: { body: { planInfo: { planName: 'Enterprise', billingCycleEnd: '1788220800000' } } },
+      full_stripe_profile: { body: { teamId: 424242, isTeamMember: true } },
+    });
+
+    const result = await fetchQuotaForProvider('cursor');
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'No active Cursor subscription');
+  });
+
+  test('reports a disabled subscription as an error', async () => {
+    routeCursorApi({ GetCurrentPeriodUsage: { body: { enabled: false } } });
+
+    const result = await fetchQuotaForProvider('cursor');
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'No active Cursor subscription');
+  });
+});
+
 describe('Ollama Cloud quota validation and refresh', () => {
   const credential = { cookie: 'test-ollama-cookie' };
   const readCookie = () => credential.cookie;
@@ -1875,5 +1998,184 @@ describe('NanoGPT quota provider (VS Code parity)', () => {
     const result = await run({ weeklyInputTokens: 'invalid' });
     assert.equal(result.ok, false);
   });
+});
 
+describe('ZenMux quota provider (VS Code parity)', () => {
+  const readCredential = () => ({ platformApiKey: 'test-token' });
+  const documentedPayload = {
+    success: true,
+    data: { currency: 'usd', total_credits: 482.74, top_up_credits: 35.0, bonus_credits: 447.74 },
+  };
+
+  test('builds credits_balance from the documented PAYG payload', async () => {
+    let requests = 0;
+    const result = await fetchZenmuxQuota({
+      readCredential,
+      fetchImpl: async (url, options) => {
+        requests += 1;
+        assert.equal(url, 'https://zenmux.ai/api/v1/management/payg/balance');
+        assert.equal(options.method, 'GET');
+        assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer test-token');
+        assert.ok(options.signal instanceof AbortSignal);
+        return Response.json(documentedPayload);
+      },
+    });
+    assert.equal(requests, 1);
+    assert.equal(result.ok, true);
+    assert.equal(result.providerId, 'zenmux');
+    assert.equal(result.configured, true);
+    assert.ok(result.usage);
+    assert.equal(result.usage.windows.credits_balance?.valueLabel, '$482.74');
+    assert.equal(result.usage.windows.credits_balance?.usedPercent, null);
+    assert.equal(JSON.stringify(result).includes('test-token'), false);
+  });
+
+  for (const { totalCredits, label } of [
+    { totalCredits: 0, label: '$0.00' },
+    { totalCredits: '0', label: '$0.00' },
+    { totalCredits: 12.5, label: '$12.50' },
+  ]) {
+    test(`accepts finite total_credits ${JSON.stringify(totalCredits)}`, async () => {
+      const result = await fetchZenmuxQuota({
+        readCredential,
+        fetchImpl: async () => Response.json({ success: true, data: { currency: 'usd', total_credits: totalCredits } }),
+      });
+      assert.equal(result.ok, true);
+      assert.equal(result.usage?.windows.credits_balance?.valueLabel, label);
+    });
+  }
+
+  for (const payload of [
+    {}, null, [], { success: true }, { success: true, data: null },
+    { success: true, data: {} }, { success: true, data: { total_credits: '' } },
+    { success: true, data: { total_credits: 'NaN' } }, { success: true, data: { total_credits: null } },
+  ]) {
+    test(`rejects invalid payload ${JSON.stringify(payload)} instead of showing zero`, async () => {
+      const result = await fetchZenmuxQuota({ readCredential, fetchImpl: async () => Response.json(payload) });
+      assert.equal(result.ok, false);
+      assert.equal(result.configured, true);
+      assert.equal(result.error, 'No quota data in response');
+      assert.equal(result.usage, null);
+    });
+  }
+
+  test('does not request usage without a Platform API key', async () => {
+    const result = await fetchZenmuxQuota({
+      readCredential: () => null,
+      fetchImpl: async () => { assert.fail('Unexpected request'); },
+    });
+    assert.equal(result.configured, false);
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'Not configured');
+  });
+
+  test('reports HTTP 401 as an invalid Platform API key', async () => {
+    const result = await fetchZenmuxQuota({ readCredential, fetchImpl: async () => new Response(null, { status: 401 }) });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'Invalid ZenMux Platform API key');
+  });
+
+  test('reports invalid JSON as a parse failure', async () => {
+    const result = await fetchZenmuxQuota({ readCredential, fetchImpl: async () => new Response('{') });
+    assert.equal(result.error, 'Invalid response from provider');
+    assert.equal(result.ok, false);
+    assert.equal(result.usage, null);
+  });
+});
+
+describe('Kilo Code quota provider (VS Code parity)', () => {
+  const readAuth = () => ({ kilo: { key: 'test-token' } });
+  const readOrganizationId = () => null;
+
+  test('builds credits_balance from the documented balance payload', async () => {
+    let requests = 0;
+    const result = await fetchKiloQuota({
+      readAuth,
+      readOrganizationId,
+      fetchImpl: async (url, options) => {
+        requests += 1;
+        assert.equal(url, 'https://api.kilo.ai/api/profile/balance');
+        assert.equal(options.method, 'GET');
+        const headers = new Headers(options.headers);
+        assert.equal(headers.get('Authorization'), 'Bearer test-token');
+        assert.equal(headers.get('Content-Type'), 'application/json');
+        assert.equal(headers.get('x-kilocode-organizationid'), null);
+        assert.ok(options.signal instanceof AbortSignal);
+        return Response.json({ balance: 12.5 });
+      },
+    });
+    assert.equal(requests, 1);
+    assert.equal(result.ok, true);
+    assert.equal(result.providerId, 'kilo');
+    assert.equal(result.configured, true);
+    assert.ok(result.usage);
+    assert.equal(result.usage.windows.credits_balance?.valueLabel, '$12.50');
+    assert.equal(JSON.stringify(result).includes('test-token'), false);
+  });
+
+  test('sends the organization header from the auth entry', async () => {
+    const result = await fetchKiloQuota({
+      readAuth: () => ({ kilo: { key: 'test-token', organizationId: 'org-123' } }),
+      readOrganizationId,
+      fetchImpl: async (_url, options) => {
+        assert.equal(new Headers(options.headers).get('x-kilocode-organizationid'), 'org-123');
+        return Response.json({ balance: 4 });
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(JSON.stringify(result).includes('org-123'), false);
+  });
+
+  test('falls back to OpenCode provider options when auth has no organization', async () => {
+    const result = await fetchKiloQuota({
+      readAuth,
+      readOrganizationId: () => 'config-org',
+      fetchImpl: async (_url, options) => {
+        assert.equal(new Headers(options.headers).get('x-kilocode-organizationid'), 'config-org');
+        return Response.json({ balance: 4 });
+      },
+    });
+    assert.equal(result.ok, true);
+  });
+
+  test('accepts a literal zero balance', async () => {
+    const result = await fetchKiloQuota({
+      readAuth,
+      readOrganizationId,
+      fetchImpl: async () => Response.json({ balance: 0 }),
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.usage?.windows.credits_balance?.valueLabel, '$0.00');
+  });
+
+  test('rejects a missing balance instead of showing zero', async () => {
+    const result = await fetchKiloQuota({
+      readAuth,
+      readOrganizationId,
+      fetchImpl: async () => Response.json({}),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'No quota data in response');
+    assert.equal(result.usage, null);
+  });
+
+  test('does not request usage without a valid credential', async () => {
+    const result = await fetchKiloQuota({
+      readAuth: () => ({}),
+      readOrganizationId,
+      fetchImpl: async () => { assert.fail('Unexpected request'); },
+    });
+    assert.equal(result.configured, false);
+    assert.equal(result.ok, false);
+  });
+
+  test('reports HTTP 401 as session expired', async () => {
+    const result = await fetchKiloQuota({
+      readAuth,
+      readOrganizationId,
+      fetchImpl: async () => new Response(null, { status: 401 }),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'Session expired — please re-authenticate with Kilo Code');
+  });
 });

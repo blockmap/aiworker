@@ -105,6 +105,9 @@ const formatZaiCreditValueLabel = (limit: ZaiLimit): string | null => {
 };
 
 type ZaiPayload = {
+  code?: number | null;
+  msg?: string | null;
+  success?: boolean;
   data?: {
     limits?: ZaiLimit[];
     level?: string;
@@ -918,6 +921,14 @@ export const listConfiguredQuotaProviders = async () => {
 
   if (getHyperApiKey(auth)) {
     configured.add('hyper');
+  }
+
+  if (asNonEmptyString(readCredential('zenmux')?.platformApiKey)) {
+    configured.add('zenmux');
+  }
+
+  if (getKiloApiKey(auth)) {
+    configured.add('kilo');
   }
 
   if (resolveXaiAuth(auth)) {
@@ -1978,16 +1989,90 @@ const fetchExeDevQuota = async (): Promise<ProviderResult> => {
   }
 };
 
+const CURSOR_BASE_URL = 'https://api2.cursor.sh';
+
+const fetchCursorConnect = async (path: string, accessToken: string, body: Record<string, unknown> | null): Promise<Record<string, unknown>> => {
+  const response = await fetch(`${CURSOR_BASE_URL}/${path}`, body === null
+    ? { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15_000) }
+    : { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
+  if (!response.ok) throw new Error(response.status === 401 ? 'Cursor session expired' : `API error: ${response.status}`);
+  return response.json() as Promise<Record<string, unknown>>;
+};
+
+const cursorRequestUsage = (authUsage: unknown): { used: number; limit: number } | null => {
+  let best: { used: number; limit: number } | null = null;
+  for (const [key, entry] of Object.entries((authUsage ?? {}) as Record<string, Record<string, unknown>>)) {
+    if (key === 'startOfMonth' || !entry) continue;
+    const used = toNumber(entry.numRequests);
+    const limit = toNumber(entry.maxRequestUsage);
+    if (used === null || !limit) continue;
+    if (!best || limit > best.limit) best = { used, limit };
+  }
+  return best;
+};
+
+const cursorTeamMemberSpend = (teamSpend: unknown, userId: unknown): Record<string, unknown> | null => {
+  const id = toNumber(userId);
+  const members = (teamSpend as Record<string, unknown> | null | undefined)?.teamMemberSpend;
+  if (id === null || !Array.isArray(members)) return null;
+  return (members as Array<Record<string, unknown>>).find((member) => toNumber(member?.userId) === id) ?? null;
+};
+
+const cursorCreditsWindow = (credits: Record<string, unknown> | null): UsageWindow | null => {
+  const balance = toNumber(credits?.balanceCents ?? credits?.totalBalanceCents ?? credits?.amountCents);
+  return balance === null ? null : toUsageWindow({ usedPercent: null, windowSeconds: null, resetAt: null, valueLabel: `$${formatMoney(balance / 100)}` });
+};
+
+const cursorEnterpriseWindows = (usage: Record<string, unknown> | null, plan: Record<string, unknown> | null, authUsage: Record<string, unknown> | null, hardLimit: Record<string, unknown> | null, memberSpend: Record<string, unknown> | null): Record<string, UsageWindow> => {
+  const resetAt = toTimestamp((plan?.planInfo as Record<string, unknown> | undefined)?.billingCycleEnd ?? usage?.billingCycleEnd);
+  const windowSeconds = resetAt ? Math.max(0, Math.floor((resetAt - Date.now()) / 1000)) : null;
+  const windows: Record<string, UsageWindow> = {};
+  const requestUsage = cursorRequestUsage(authUsage);
+  if (requestUsage) {
+    windows.billing_cycle = toUsageWindow({ usedPercent: Math.min(100, Math.max(0, (requestUsage.used / requestUsage.limit) * 100)), windowSeconds, resetAt, valueLabel: `${Math.round(requestUsage.used)} / ${Math.round(requestUsage.limit)}` });
+  }
+  const limitDollars = toNumber(hardLimit?.hardLimitPerUser);
+  const usedCents = toNumber(memberSpend?.spendCents);
+  if (limitDollars !== null && limitDollars > 0 && usedCents !== null) {
+    windows.on_demand = toUsageWindow({ usedPercent: Math.min(100, Math.max(0, (usedCents / (limitDollars * 100)) * 100)), windowSeconds, resetAt, valueLabel: `$${formatMoney(usedCents / 100)} / $${formatMoney(limitDollars)}` });
+  }
+  return windows;
+};
+
 const fetchCursorQuota = async (): Promise<ProviderResult> => {
   const accessToken = readCredential('cursor')?.accessToken;
   if (!accessToken) return buildResult({ providerId: 'cursor', providerName: 'Cursor', ok: false, configured: false, error: 'Not configured' });
   try {
-    const response = await fetch('https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage', { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1' }, body: '{}', signal: AbortSignal.timeout(15_000) });
-    if (!response.ok) throw new Error(response.status === 401 ? 'Cursor session expired' : `API error: ${response.status}`);
-    const payload = await response.json() as Record<string, unknown>;
-    const plan = (payload.planUsage as Record<string, unknown> | undefined) ?? {};
-    const usedPercent = toNumber(plan.totalPercentUsed);
-    return buildResult({ providerId: 'cursor', providerName: 'Cursor', ok: true, configured: true, usage: { windows: { billing_cycle: toUsageWindow({ usedPercent, windowSeconds: null, resetAt: toTimestamp(payload.billingCycleEnd) }) } } });
+    const post = (path: string, body: Record<string, unknown> = {}) => fetchCursorConnect(path, accessToken, body);
+    const get = (path: string) => fetchCursorConnect(path, accessToken, null);
+    const [usage, plan, credits] = await Promise.all([
+      post('aiserver.v1.DashboardService/GetCurrentPeriodUsage'),
+      post('aiserver.v1.DashboardService/GetPlanInfo').catch(() => null),
+      post('aiserver.v1.DashboardService/GetCreditGrantsBalance').catch(() => null),
+    ]);
+    if (usage?.enabled === false) return buildResult({ providerId: 'cursor', providerName: 'Cursor', ok: false, configured: true, error: 'No active Cursor subscription' });
+    if (!usage?.planUsage) {
+      const profile = await get('auth/full_stripe_profile').catch(() => null);
+      const teamId = profile?.teamId ? String(profile.teamId) : null;
+      const teamBody = teamId ? { teamId } : {};
+      const [authUsage, hardLimit, teamSpend, me] = await Promise.all([
+        get('auth/usage').catch(() => null),
+        post('aiserver.v1.DashboardService/GetHardLimit', teamBody).catch(() => null),
+        teamId ? post('aiserver.v1.DashboardService/GetTeamSpend', teamBody).catch(() => null) : null,
+        post('aiserver.v1.DashboardService/GetMe').catch(() => null),
+      ]);
+      const windows = cursorEnterpriseWindows(usage, plan, authUsage, hardLimit, cursorTeamMemberSpend(teamSpend, me?.userId));
+      if (!windows.billing_cycle && !windows.on_demand) {
+        return buildResult({ providerId: 'cursor', providerName: 'Cursor', ok: false, configured: true, error: 'No active Cursor subscription' });
+      }
+      const creditWindow = cursorCreditsWindow(credits);
+      if (creditWindow) windows.credits = creditWindow;
+      const planName = (plan?.planInfo as Record<string, unknown> | undefined)?.planName;
+      return buildResult({ providerId: 'cursor', providerName: planName ? `Cursor ${String(planName)}` : 'Cursor', ok: true, configured: true, usage: { windows } });
+    }
+    const planUsage = (usage.planUsage as Record<string, unknown> | undefined) ?? {};
+    const usedPercent = toNumber(planUsage.totalPercentUsed);
+    return buildResult({ providerId: 'cursor', providerName: 'Cursor', ok: true, configured: true, usage: { windows: { billing_cycle: toUsageWindow({ usedPercent, windowSeconds: null, resetAt: toTimestamp(usage.billingCycleEnd) }) } } });
   } catch (error) { return buildResult({ providerId: 'cursor', providerName: 'Cursor', ok: false, configured: true, error: error instanceof Error ? error.message : 'Request failed' }); }
 };
 
@@ -2314,6 +2399,11 @@ const fetchZaiQuota = async (): Promise<ProviderResult> => {
     }
 
     const payload = await response.json() as ZaiPayload;
+    // Same monitor API family as bigmodel.cn: business failures arrive inside HTTP 200.
+    const failure = zhipuaiEnvelopeError(payload);
+    if (failure) {
+      return buildResult({ providerId: 'zai-coding-plan', providerName: 'z.ai', ok: false, configured: true, error: failure });
+    }
     const limits = Array.isArray(payload?.data?.limits) ? payload.data.limits : [];
     const windows: Record<string, UsageWindow> = {};
     // The API renamed TOKENS_LIMIT to CREDIT_LIMIT; field semantics stayed the same,
@@ -3337,6 +3427,254 @@ export const fetchHyperQuota = async ({ readAuth = readOpenCodeCredentials, fetc
   }
 };
 
+const ZENMUX_BALANCE_URL = 'https://zenmux.ai/api/v1/management/payg/balance';
+
+type ZenmuxManagedCredential = {
+  platformApiKey: string;
+};
+
+type ZenmuxQuotaDependencies = {
+  readCredential?: () => ZenmuxManagedCredential | null;
+  fetchImpl?: (url: string, options: RequestInit) => Promise<Response>;
+};
+
+const readZenmuxManagedCredential = (): ZenmuxManagedCredential | null => {
+  const platformApiKey = asNonEmptyString(readCredential('zenmux')?.platformApiKey);
+  return platformApiKey ? { platformApiKey } : null;
+};
+
+export const fetchZenmuxQuota = async ({
+  readCredential: readManaged = readZenmuxManagedCredential,
+  fetchImpl = fetch,
+}: ZenmuxQuotaDependencies = {}): Promise<ProviderResult> => {
+  const apiKey = asNonEmptyString(readManaged()?.platformApiKey);
+
+  if (!apiKey) {
+    return buildResult({
+      providerId: 'zenmux',
+      providerName: 'ZenMux',
+      ok: false,
+      configured: false,
+      error: 'Not configured',
+    });
+  }
+
+  const timeoutSignal = AbortSignal.timeout(15_000);
+
+  try {
+    const response = await fetchImpl(ZENMUX_BALANCE_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Accept-Encoding': 'identity',
+      },
+      signal: timeoutSignal,
+    });
+
+    if (!response.ok) {
+      return buildResult({
+        providerId: 'zenmux',
+        providerName: 'ZenMux',
+        ok: false,
+        configured: true,
+        error: response.status === 401 || response.status === 403
+          ? 'Invalid ZenMux Platform API key'
+          : `API error: ${response.status}`,
+      });
+    }
+
+    const payload = asObject(await response.json());
+    const data = asObject(payload?.data);
+    const rawCredits = data?.total_credits;
+    const totalCredits = toNumber(asNonEmptyString(rawCredits)
+      ?? (Number.isFinite(rawCredits) ? rawCredits : null));
+
+    if (totalCredits === null) {
+      return buildResult({
+        providerId: 'zenmux',
+        providerName: 'ZenMux',
+        ok: false,
+        configured: true,
+        error: 'No quota data in response',
+      });
+    }
+
+    const windows = {
+      credits_balance: toUsageWindow({
+        usedPercent: null,
+        windowSeconds: null,
+        resetAt: null,
+        valueLabel: `$${formatMoney(totalCredits)}`,
+      }),
+    };
+
+    return buildResult({
+      providerId: 'zenmux',
+      providerName: 'ZenMux',
+      ok: true,
+      configured: true,
+      usage: { windows },
+    });
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && (
+      error.name === 'TimeoutError' || (error.name === 'AbortError' && timeoutSignal.aborted)
+    );
+    const isParseError = error instanceof SyntaxError;
+    return buildResult({
+      providerId: 'zenmux',
+      providerName: 'ZenMux',
+      ok: false,
+      configured: true,
+      error: isTimeout
+        ? 'Request timed out'
+        : isParseError
+          ? 'Invalid response from provider'
+          : (error instanceof Error ? error.message : 'Request failed'),
+    });
+  }
+};
+
+const KILO_BALANCE_URL = 'https://api.kilo.ai/api/profile/balance';
+const KILO_AUTH_ALIASES = ['kilo', 'kilocode', 'kilo-code'];
+
+const getKiloAuthEntry = (auth: AuthFile) => normalizeAuthEntry(getAuthEntry(auth, KILO_AUTH_ALIASES));
+
+const getKiloApiKey = (auth: AuthFile) => {
+  const entry = getKiloAuthEntry(auth);
+  return asNonEmptyString(entry?.key)
+    ?? asNonEmptyString(entry?.token)
+    ?? asNonEmptyString(entry?.access);
+};
+
+const readKiloOrganizationIdFromUserConfig = (): string | null => {
+  try {
+    const configPath = path.join(OPENCODE_CONFIG_DIR, 'opencode.json');
+    if (!fs.existsSync(configPath)) return null;
+    const parsed = asObject(JSON.parse(fs.readFileSync(configPath, 'utf8')));
+    const provider = asObject(parsed?.provider);
+    const kilo = asObject(provider?.kilo) ?? asObject(provider?.kilocode);
+    const options = asObject(kilo?.options);
+    return asNonEmptyString(options?.kilocodeOrganizationId)
+      ?? asNonEmptyString(options?.organizationId);
+  } catch {
+    return null;
+  }
+};
+
+type KiloQuotaDependencies = {
+  readAuth?: () => AuthFile | Promise<AuthFile>;
+  readOrganizationId?: () => string | null;
+  fetchImpl?: (url: string, options: RequestInit) => Promise<Response>;
+};
+
+export const fetchKiloQuota = async ({
+  readAuth = readOpenCodeCredentials,
+  readOrganizationId = readKiloOrganizationIdFromUserConfig,
+  fetchImpl = fetch,
+}: KiloQuotaDependencies = {}): Promise<ProviderResult> => {
+  const auth = await readAuth();
+  const entry = getKiloAuthEntry(auth);
+  const apiKey = getKiloApiKey(auth);
+
+  if (!apiKey) {
+    return buildResult({
+      providerId: 'kilo',
+      providerName: 'Kilo Code',
+      ok: false,
+      configured: false,
+      error: 'Not configured',
+    });
+  }
+
+  const organizationId = asNonEmptyString(entry?.kilocodeOrganizationId)
+    ?? asNonEmptyString(entry?.organizationId)
+    ?? asNonEmptyString(entry?.accountId)
+    ?? readOrganizationId();
+
+  const timeoutSignal = AbortSignal.timeout(15_000);
+
+  try {
+    const headers = organizationId
+      ? {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept-Encoding': 'identity',
+          'x-kilocode-organizationid': organizationId,
+        }
+      : {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept-Encoding': 'identity',
+        };
+
+    const response = await fetchImpl(KILO_BALANCE_URL, {
+      method: 'GET',
+      headers,
+      signal: timeoutSignal,
+    });
+
+    if (!response.ok) {
+      return buildResult({
+        providerId: 'kilo',
+        providerName: 'Kilo Code',
+        ok: false,
+        configured: true,
+        error: response.status === 401 || response.status === 403
+          ? 'Session expired — please re-authenticate with Kilo Code'
+          : `API error: ${response.status}`,
+      });
+    }
+
+    const payload = asObject(await response.json());
+    const rawBalance = payload?.balance;
+    const balance = toNumber(asNonEmptyString(rawBalance)
+      ?? (Number.isFinite(rawBalance) ? rawBalance : null));
+
+    if (balance === null) {
+      return buildResult({
+        providerId: 'kilo',
+        providerName: 'Kilo Code',
+        ok: false,
+        configured: true,
+        error: 'No quota data in response',
+      });
+    }
+
+    const windows = {
+      credits_balance: toUsageWindow({
+        usedPercent: null,
+        windowSeconds: null,
+        resetAt: null,
+        valueLabel: `$${formatMoney(balance)}`,
+      }),
+    };
+
+    return buildResult({
+      providerId: 'kilo',
+      providerName: 'Kilo Code',
+      ok: true,
+      configured: true,
+      usage: { windows },
+    });
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && (
+      error.name === 'TimeoutError' || (error.name === 'AbortError' && timeoutSignal.aborted)
+    );
+    const isParseError = error instanceof SyntaxError;
+    return buildResult({
+      providerId: 'kilo',
+      providerName: 'Kilo Code',
+      ok: false,
+      configured: true,
+      error: isTimeout
+        ? 'Request timed out'
+        : isParseError
+          ? 'Invalid response from provider'
+          : (error instanceof Error ? error.message : 'Request failed'),
+    });
+  }
+};
+
 const fetchXaiQuota = async (): Promise<ProviderResult> => {
   try {
     const entry = resolveXaiAuth(await readOpenCodeCredentials());
@@ -3464,6 +3802,10 @@ const fetchQuotaForProviderUncoalesced = async (providerId: string): Promise<Pro
       return fetchHyperQuota();
     case 'neuralwatt':
       return fetchNeuralwattQuota();
+    case 'kilo':
+      return fetchKiloQuota();
+    case 'zenmux':
+      return fetchZenmuxQuota();
     case 'xai':
       return fetchXaiQuota();
     default:
