@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { OPENCODE_CONFIG_DIR } from './opencodeConfigPaths';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -209,6 +210,14 @@ type DeepseekPayload = {
     granted_balance?: number | string;
     topped_up_balance?: number | string;
   }>;
+};
+
+type DeepinfraPayload = {
+  checklist?: {
+    stripe_balance?: number | string;
+    recent?: number | string;
+    limit?: number | string | null;
+  } | null;
 };
 
 type NeuralwattPayload = {
@@ -902,6 +911,11 @@ export const listConfiguredQuotaProviders = async () => {
     configured.add('deepseek');
   }
 
+  const deepinfraAuth = normalizeAuthEntry(getAuthEntry(auth, ['deepinfra', 'deep-infra', 'deep_infra']));
+  if (deepinfraAuth && ((deepinfraAuth as Record<string, unknown>).key || (deepinfraAuth as Record<string, unknown>).token)) {
+    configured.add('deepinfra');
+  }
+
   if (getHyperApiKey(auth)) {
     configured.add('hyper');
   }
@@ -977,7 +991,7 @@ const fetchCodexQuota = async (): Promise<ProviderResult> => {
       const valueLabel = unlimited
         ? 'Unlimited'
         : balance !== null
-          ? `$${formatMoney(balance)}`
+          ? String(balance)
           : null;
       windows.credits_balance = toUsageWindow({
         usedPercent: null,
@@ -2502,6 +2516,31 @@ const fetchZhipuaiCodingPlanQuota = async (): Promise<ProviderResult> => {
   }
 };
 
+const nanoGptQuotaWindowSchema = z.object({
+  percentUsed: z.number().nullish(),
+  used: z.union([z.number(), z.string()]).nullish(),
+  limit: z.union([z.number(), z.string()]).nullish(),
+  limits: z.object({
+    daily: z.union([z.number(), z.string()]).nullish(),
+    monthly: z.union([z.number(), z.string()]).nullish(),
+  }).nullish(),
+  resetAt: z.union([z.number(), z.string()]).nullish(),
+  degraded: z.boolean().optional(),
+}).nullish();
+
+const nanoGptUsageSchema = z.object({
+  state: z.string().nullish(),
+  period: z.object({ currentPeriodEnd: z.union([z.number(), z.string()]).nullish() }).nullish(),
+  limits: z.object({
+    dailyInputTokens: z.number().nullish(),
+    weeklyInputTokens: z.number().nullish(),
+  }).nullish(),
+  dailyInputTokens: nanoGptQuotaWindowSchema,
+  weeklyInputTokens: nanoGptQuotaWindowSchema,
+  daily: nanoGptQuotaWindowSchema,
+  monthly: nanoGptQuotaWindowSchema,
+});
+
 const NANO_GPT_DAILY_WINDOW_SECONDS = 86400;
 
 const fetchNanoGptQuota = async (): Promise<ProviderResult> => {
@@ -2538,54 +2577,55 @@ const fetchNanoGptQuota = async (): Promise<ProviderResult> => {
       });
     }
 
-    const payload = await response.json() as Record<string, unknown>;
-    const windows: Record<string, UsageWindow> = {};
-    const period = payload.period as Record<string, unknown> | undefined;
-    const daily = payload.daily as Record<string, unknown> | undefined;
-    const monthly = payload.monthly as Record<string, unknown> | undefined;
-    const state = (payload.state as string) ?? 'active';
-
-    if (daily) {
-      let usedPercent: number | null = null;
-      const percentUsed = daily.percentUsed as number | undefined;
-      if (typeof percentUsed === 'number') {
-        usedPercent = Math.max(0, Math.min(100, percentUsed * 100));
-      } else {
-        const used = toNumber(daily.used);
-        const limit = toNumber((daily.limit as number | undefined) ?? (daily.limits as Record<string, unknown>)?.daily);
-        if (used !== null && limit !== null && limit > 0) {
-          usedPercent = Math.max(0, Math.min(100, (used / limit) * 100));
-        }
-      }
-      const resetAt = toTimestamp(daily.resetAt);
-      const valueLabel = state !== 'active' ? `(${state})` : null;
-      windows['daily'] = toUsageWindow({
-        usedPercent,
+    const payload = nanoGptUsageSchema.parse(await response.json());
+    const windows: ProviderUsage['windows'] = {};
+    const state = payload.state ?? 'active';
+    // A null current daily quota means no daily cap; only absent fields use legacy data.
+    const daily = payload.dailyInputTokens !== undefined ? payload.dailyInputTokens : payload.daily;
+    const quotas = [
+      {
+        name: 'daily',
+        quota: daily,
+        limit: payload.dailyInputTokens !== undefined
+          ? payload.limits?.dailyInputTokens
+          : daily?.limit ?? daily?.limits?.daily,
         windowSeconds: NANO_GPT_DAILY_WINDOW_SECONDS,
-        resetAt,
-        valueLabel,
-      });
-    }
+        resetAt: daily?.resetAt,
+      },
+      {
+        name: 'weekly',
+        quota: payload.weeklyInputTokens,
+        limit: payload.limits?.weeklyInputTokens,
+        windowSeconds: 7 * NANO_GPT_DAILY_WINDOW_SECONDS,
+        resetAt: payload.weeklyInputTokens?.resetAt,
+      },
+      {
+        name: 'monthly',
+        quota: payload.monthly,
+        limit: payload.monthly?.limit ?? payload.monthly?.limits?.monthly,
+        windowSeconds: null,
+        resetAt: payload.monthly?.resetAt ?? payload.period?.currentPeriodEnd,
+      },
+    ];
 
-    if (monthly) {
+    for (const { name, quota, limit: rawLimit, windowSeconds, resetAt } of quotas) {
+      if (!quota) continue;
+      const percentUsed = toNumber(quota.percentUsed);
+      const used = toNumber(quota.used);
+      const limit = toNumber(rawLimit);
       let usedPercent: number | null = null;
-      const percentUsed = monthly.percentUsed as number | undefined;
-      if (typeof percentUsed === 'number') {
-        usedPercent = Math.max(0, Math.min(100, percentUsed * 100));
-      } else {
-        const used = toNumber(monthly.used);
-        const limit = toNumber((monthly.limit as number | undefined) ?? (monthly.limits as Record<string, unknown>)?.monthly);
-        if (used !== null && limit !== null && limit > 0) {
+      if (!quota.degraded) {
+        if (percentUsed !== null) {
+          usedPercent = Math.max(0, Math.min(100, percentUsed * 100));
+        } else if (used !== null && limit !== null && limit > 0) {
           usedPercent = Math.max(0, Math.min(100, (used / limit) * 100));
         }
       }
-      const resetAt = toTimestamp((monthly.resetAt as string | number | undefined) ?? (period as Record<string, unknown>)?.currentPeriodEnd);
-      const valueLabel = state !== 'active' ? `(${state})` : null;
-      windows['monthly'] = toUsageWindow({
+      windows[name] = toUsageWindow({
         usedPercent,
-        windowSeconds: null,
-        resetAt,
-        valueLabel,
+        windowSeconds,
+        resetAt: toTimestamp(resetAt),
+        valueLabel: state !== 'active' ? `(${state})` : null,
       });
     }
 
@@ -2985,6 +3025,108 @@ export const fetchClinePassQuota = async ({ readAuth = readOpenCodeCredentials, 
   }
 };
 
+const DEEPINFRA_ME_URL = 'https://api.deepinfra.com/v1/me?checklist=true';
+
+type DeepinfraQuotaDependencies = {
+  readAuth?: () => AuthFile | Promise<AuthFile>;
+};
+
+const fetchDeepinfraQuota = async ({ readAuth = readOpenCodeCredentials }: DeepinfraQuotaDependencies = {}): Promise<ProviderResult> => {
+  const auth = await readAuth();
+  const entry = normalizeAuthEntry(getAuthEntry(auth, ['deepinfra', 'deep-infra', 'deep_infra'])) as Record<string, unknown> | null;
+  const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
+
+  if (!apiKey) {
+    return buildResult({
+      providerId: 'deepinfra',
+      providerName: 'DeepInfra',
+      ok: false,
+      configured: false,
+      error: 'Not configured',
+    });
+  }
+
+  const timeoutSignal = AbortSignal.timeout(15_000);
+
+  try {
+    const response = await fetch(DEEPINFRA_ME_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Accept-Encoding': 'identity',
+      },
+      signal: timeoutSignal,
+    });
+
+    if (!response.ok) {
+      return buildResult({
+        providerId: 'deepinfra',
+        providerName: 'DeepInfra',
+        ok: false,
+        configured: true,
+        error: response.status === 401 || response.status === 403
+          ? 'Session expired — please re-authenticate with DeepInfra'
+          : `API error: ${response.status}`,
+      });
+    }
+
+    // SAFETY: every DeepinfraPayload field is optional and the balance is parsed
+    // below, so an unexpected body ends as "No quota data in response".
+    const payload = await response.json() as DeepinfraPayload;
+    // Documented at https://docs.deepinfra.com/api-reference/account/me:
+    // checklist.stripe_balance is negative when funds are ready to spend and
+    // positive when money is owed, so the spendable credit is its negation.
+    const rawBalance = payload?.checklist?.stripe_balance;
+    // A blank or absent balance is missing data, not a $0.00 balance.
+    const stripeBalance = String(rawBalance ?? '').trim() === '' ? null : toNumber(rawBalance);
+
+    if (stripeBalance === null) {
+      return buildResult({
+        providerId: 'deepinfra',
+        providerName: 'DeepInfra',
+        ok: false,
+        configured: true,
+        error: 'No quota data in response',
+      });
+    }
+
+    const availableCredits = -stripeBalance;
+    const symbol = availableCredits < 0 ? '-$' : '$';
+    const windows = {
+      credits_balance: toUsageWindow({
+        usedPercent: null,
+        windowSeconds: null,
+        resetAt: null,
+        valueLabel: `${symbol}${formatMoney(Math.abs(availableCredits))}`,
+      }),
+    };
+
+    return buildResult({
+      providerId: 'deepinfra',
+      providerName: 'DeepInfra',
+      ok: true,
+      configured: true,
+      usage: { windows },
+    });
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && (
+      error.name === 'TimeoutError' || (error.name === 'AbortError' && timeoutSignal.aborted)
+    );
+    const isParseError = error instanceof SyntaxError;
+    return buildResult({
+      providerId: 'deepinfra',
+      providerName: 'DeepInfra',
+      ok: false,
+      configured: true,
+      error: isTimeout
+        ? 'Request timed out'
+        : isParseError
+          ? 'Invalid response from provider'
+          : (error instanceof Error ? error.message : 'Request failed'),
+    });
+  }
+};
+
 const DEEPSEEK_QUOTA_URL = 'https://api.deepseek.com/user/balance';
 
 const fetchDeepseekQuota = async (): Promise<ProviderResult> => {
@@ -3034,10 +3176,8 @@ const fetchDeepseekQuota = async (): Promise<ProviderResult> => {
     });
     const balanceInfo = positiveBalances.find((info) => info?.currency === 'USD')
       ?? positiveBalances.find((info) => info?.currency === 'CNY')
-      ?? positiveBalances[0]
       ?? balanceInfos.find((info) => info?.currency === 'USD')
       ?? balanceInfos.find((info) => info?.currency === 'CNY')
-      ?? balanceInfos[0]
       ?? null;
     const rawBalance = balanceInfo?.total_balance;
     const totalBalance = (typeof rawBalance === 'number' || (typeof rawBalance === 'string' && rawBalance.trim() !== ''))
@@ -3316,6 +3456,8 @@ const fetchQuotaForProviderUncoalesced = async (providerId: string): Promise<Pro
       return fetchCursorQuota();
     case 'cline-pass':
       return fetchClinePassQuota();
+    case 'deepinfra':
+      return fetchDeepinfraQuota();
     case 'deepseek':
       return fetchDeepseekQuota();
     case 'hyper':

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { listModelVariantIds, modelVariantNames } from "@/lib/modelVariants";
 import { AUTO_MODEL_ID, AUTO_PROVIDER_ID, isAutoModel } from '@/lib/routing/autoModel';
 import { selectAutoReady, useRoutingStore } from '@/stores/useRoutingStore';
 import type { StoreApi, UseBoundStore } from "zustand";
@@ -53,6 +54,7 @@ interface OpenChamberDefaults {
     defaultFileViewerPreview?: boolean;
     zenModel?: string;
     messageStreamTransport?: 'auto' | 'ws' | 'sse';
+    dictationEnabled?: boolean;
     sttProvider?: 'local' | 'openai-compatible';
     sttServerUrl?: string;
     sttModel?: string;
@@ -136,6 +138,7 @@ const toOpenChamberDefaults = (data: DesktopSettings): OpenChamberDefaults => {
         defaultFileViewerPreview: data.defaultFileViewerPreview,
         zenModel: zenModel.length > 0 ? zenModel : undefined,
         messageStreamTransport: data.messageStreamTransport,
+        dictationEnabled: data.dictationEnabled,
         sttProvider: data.sttProvider,
         sttServerUrl: data.sttServerUrl,
         sttModel: data.sttModel,
@@ -212,7 +215,7 @@ const findProviderModel = (
 
 /** v2 lists model variants as records with an `id`, not as a keyed map. */
 const modelHasVariant = (model: Model | undefined, variant: string | null | undefined): boolean => (
-    typeof variant === "string" && (model?.variants.some((entry) => entry.id === variant) ?? false)
+    typeof variant === "string" && listModelVariantIds(model?.variants).includes(variant)
 );
 
 const hasProviderModel = (
@@ -567,7 +570,7 @@ const buildModelMetadataKey = (providerId: string, modelId: string) => {
  */
 const deriveModelMetadata = (providerId: string, model: ProviderModel): ModelMetadata => {
     const baseCost = model.cost.find((entry) => !entry.tier) ?? model.cost[0];
-    const hasReasoningSignal = model.variants.length > 0
+    const hasReasoningSignal = modelVariantNames(model).length > 0
         || model.compatibility?.reasoningField !== undefined
         || model.compatibility?.requireReasoning === true;
     return {
@@ -1073,6 +1076,18 @@ type CurrentVariantSelection = {
 
 const resolveVariantFromSelection = (selection: CurrentVariantSelection): string | undefined => (
     selection.override === null ? undefined : selection.override ?? selection.inherited
+);
+
+const hasCompatibleCachedVariants = (providers: ProviderWithModelList[] | undefined): boolean => (
+    Array.isArray(providers) && providers.every((provider) => (
+        isRecord(provider)
+        && Array.isArray(provider.models)
+        && provider.models.every((model) => (
+            isRecord(model)
+            && Array.isArray(model.variants)
+            && model.variants.every(isRecord)
+        ))
+    ))
 );
 
 /**
@@ -2356,7 +2371,7 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 getCurrentModelVariants: () => {
-                    return get().getCurrentModel()?.variants.map((variant) => variant.id) ?? [];
+                    return modelVariantNames(get().getCurrentModel());
                 },
 
                 cycleCurrentVariant: () => {
@@ -2475,6 +2490,7 @@ export const useConfigStore = create<ConfigStore>()(
                             settingsDefaultFileViewerPreview: defaults.defaultFileViewerPreview ?? true,
                             settingsZenModel: defaults.zenModel,
                             settingsMessageStreamTransport: defaults.messageStreamTransport ?? state.settingsMessageStreamTransport,
+                            dictationEnabled: typeof defaults.dictationEnabled === 'boolean' ? defaults.dictationEnabled : state.dictationEnabled,
                             sttProvider: defaults.sttProvider ?? state.sttProvider,
                             sttServerUrl: defaults.sttServerUrl ?? state.sttServerUrl,
                             sttModel: defaults.sttModel ?? state.sttModel,
@@ -3029,7 +3045,7 @@ export const useConfigStore = create<ConfigStore>()(
                             agentVariant?: string,
                         ): CurrentVariantSelection => {
                             const model = findProviderModel(providers, providerId, modelId);
-                            if (model && model.variants.length === 0) return { override: undefined, inherited: undefined };
+                            if (model && modelVariantNames(model).length === 0) return { override: undefined, inherited: undefined };
 
                             // A model the catalog does not list (Auto, or a stale
                             // selection) cannot rule a variant out, so inherited
@@ -3969,7 +3985,28 @@ export const useConfigStore = create<ConfigStore>()(
                     // partial store. Only an explicitly matching runtime may hydrate it.
                     const persisted = persistedState as Partial<ConfigStore> | undefined;
                     if (!persisted || persisted.configRuntimeKey !== getRuntimeKey()) return currentState;
-                    return hydrateActiveDirectorySnapshot({ ...currentState, ...persisted });
+
+                    const storedScopes = isRecord(persisted.directoryScoped) && !Array.isArray(persisted.directoryScoped)
+                        ? persisted.directoryScoped
+                        : currentState.directoryScoped;
+                    const directoryScoped = { ...storedScopes };
+                    for (const [directory, snapshot] of Object.entries(directoryScoped)) {
+                        if (!isRecord(snapshot)) {
+                            delete directoryScoped[directory];
+                        } else if (!hasCompatibleCachedVariants(snapshot.providers)) {
+                            directoryScoped[directory] = {
+                                ...snapshot, providers: [], providersLoaded: false, defaultProviders: {},
+                            };
+                        }
+                    }
+
+                    const merged = { ...currentState, ...persisted, directoryScoped };
+                    if (!hasCompatibleCachedVariants(persisted.providers)) {
+                        merged.providers = currentState.providers;
+                        merged.providersLoaded = currentState.providersLoaded;
+                        merged.defaultProviders = currentState.defaultProviders;
+                    }
+                    return hydrateActiveDirectorySnapshot(merged);
                 },
                 // Stale-while-revalidate: persist the last-known provider/agent
                 // snapshots so the model/agent pickers paint instantly on cold
@@ -4006,6 +4043,7 @@ export const useConfigStore = create<ConfigStore>()(
                     settingsDefaultFileViewerPreview: state.settingsDefaultFileViewerPreview,
                     settingsZenModel: state.settingsZenModel,
                     settingsMessageStreamTransport: state.settingsMessageStreamTransport,
+                    dictationEnabled: state.dictationEnabled,
                     speechRate: state.speechRate,
                     speechPitch: state.speechPitch,
                     speechVolume: state.speechVolume,

@@ -605,6 +605,89 @@ describe('useConfigStore provider persistence', () => {
     expect(reloaded.currentModelId).toBe('fresh-model');
   });
 
+  test('an upgraded cache with keyed variants cannot break model selection', async () => {
+    const inactiveLegacyDirectory = '/workspace/inactive-legacy';
+    const legacyProvider = {
+      ...provider('legacy', 'legacy-model'),
+      models: [{ ...model('legacy', 'legacy-model'), variants: { high: {} } }],
+    };
+    const validProvider = provider('valid', 'valid-model', ['low']);
+    storage.set(STORAGE_KEY, JSON.stringify({
+      state: {
+        configRuntimeKey: getRuntimeKey(),
+        activeDirectoryKey: DIRECTORY,
+        providers: [legacyProvider],
+        agents: [testAgent('build')],
+        currentProviderId: 'legacy',
+        currentModelId: 'legacy-model',
+        currentVariant: 'high',
+        settingsDefaultModel: 'legacy/legacy-model',
+        settingsDefaultVariant: 'high',
+        directoryScoped: {
+          [DIRECTORY]: {
+            providers: [legacyProvider],
+            providersLoaded: true,
+            agents: [testAgent('build')],
+            currentProviderId: 'legacy',
+            currentModelId: 'legacy-model',
+            currentVariant: 'high',
+            selectedProviderId: 'legacy',
+            currentAgentName: 'build',
+            agentModelSelections: {},
+            defaultProviders: { legacy: 'legacy-model' },
+          },
+          [OTHER_DIRECTORY]: {
+            providers: [validProvider],
+            agents: [],
+            currentProviderId: 'valid',
+            currentModelId: 'valid-model',
+            selectedProviderId: 'valid',
+            agentModelSelections: {},
+            defaultProviders: { valid: 'valid-model' },
+          },
+          [inactiveLegacyDirectory]: {
+            providers: [legacyProvider],
+            providersLoaded: true,
+            agents: [testAgent('review')],
+            currentProviderId: 'legacy',
+            currentModelId: 'legacy-model',
+            selectedProviderId: 'legacy',
+            currentAgentName: 'review',
+            agentModelSelections: {},
+            defaultProviders: { legacy: 'legacy-model' },
+          },
+        },
+      },
+      version: 0,
+    }));
+
+    await useConfigStore.persist.rehydrate();
+
+    const hydrated = useConfigStore.getState();
+    hydrated.applyDefaultModelAgentSelection();
+    expect(hydrated.providers).toEqual([]);
+    expect(hydrated.directoryScoped[DIRECTORY]?.providers).toEqual([]);
+    expect(selectCatalogLoadedForDirectory(hydrated, 'models', DIRECTORY)).toBe(false);
+    expect(hydrated.directoryScoped[OTHER_DIRECTORY]?.providers).toEqual([validProvider]);
+    expect(hydrated.directoryScoped[inactiveLegacyDirectory]?.providers).toEqual([]);
+    expect(hydrated.directoryScoped[inactiveLegacyDirectory]?.providersLoaded).toBe(false);
+    expect(hydrated.directoryScoped[inactiveLegacyDirectory]?.agents).toEqual([testAgent('review')]);
+    expect(hydrated.agents).toEqual([testAgent('build')]);
+    expect(hydrated.currentProviderId).toBe('legacy');
+    expect(hydrated.currentVariant).toBe('high');
+    expect(useConfigStore.getState().getCurrentModelVariants()).toEqual([]);
+
+    liveProviderId = 'legacy';
+    liveProviderVariants = ['high'];
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY });
+
+    const refreshed = useConfigStore.getState();
+    expect(refreshed.providersLoaded).toBe(true);
+    expect(refreshed.getCurrentModelVariants()).toEqual(['high']);
+    expect(refreshed.currentVariant).toBe('high');
+    expect(refreshed.directoryScoped[OTHER_DIRECTORY]?.providers).toEqual([validProvider]);
+  });
+
   test('provider config events refresh all known directory provider caches immediately', async () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
@@ -790,6 +873,24 @@ describe('useConfigStore provider persistence', () => {
     expect(state.currentModelId).toBe('gpt-5.5');
     expect(state.currentVariant).toBe('high');
     expect(state.directoryScoped[DIRECTORY]?.currentVariant).toBe('high');
+  });
+
+  test('a model without a variants list reads as having no thinking levels', () => {
+    const withoutVariants = provider('openai', 'gpt-legacy');
+    // A stored snapshot or a live catalog can carry a model without `variants`.
+    Reflect.deleteProperty(withoutVariants.models[0], 'variants');
+    useConfigStore.setState({
+      providers: [withoutVariants],
+      currentProviderId: 'openai',
+      currentModelId: 'gpt-legacy',
+      currentVariant: 'high',
+      currentVariantSelection: { override: undefined, inherited: 'high' },
+      directoryScoped: {},
+    });
+
+    expect(useConfigStore.getState().getCurrentModelVariants()).toEqual([]);
+    // Cycling reads the same list; it must not throw on the missing field.
+    useConfigStore.getState().cycleCurrentVariant();
   });
 
   test('cycleCurrentVariant reaches Default, low, and medium from inherited high', () => {

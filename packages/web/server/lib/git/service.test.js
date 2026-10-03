@@ -46,6 +46,8 @@ import {
   revertFile,
   getUntrackedDiffs,
   getFileDiff,
+  getConflictDetails,
+  pull,
   validateWorktreeCreate,
   parseBranchCreationSource,
   getRangeFiles,
@@ -54,6 +56,8 @@ import {
   merge,
   rebase,
   push,
+  deleteRemoteBranch,
+  removeRemote,
 } from './service.js';
 
 // ---------------------------------------------------------------------------
@@ -2011,6 +2015,29 @@ describe('git remote arguments with option-like names', () => {
     expect(runGit(repository, ['rev-parse', `refs/remotes/${OPTION_LIKE_REMOTE}/react`]).trim()).toBe(expected);
   }, 30_000);
 
+  it('refuses to push or delete a branch on an option-like remote through simple-git', async () => {
+    if (!canRunGit()) return;
+
+    const { remote, repository } = createRepositoryWithRemote();
+    addOptionLikeRemote(repository, remote);
+    const before = runGit(remote, ['for-each-ref', '--format=%(refname)']).trim();
+
+    await expect(push(repository, { remote: OPTION_LIKE_REMOTE, branch: 'react' })).rejects.toThrow('Invalid remote name');
+    await expect(deleteRemoteBranch(repository, { remote: OPTION_LIKE_REMOTE, branch: 'react' })).rejects.toThrow('Invalid remote name');
+    expect(runGit(remote, ['for-each-ref', '--format=%(refname)']).trim()).toBe(before);
+  }, 30_000);
+
+  it('removes an option-like remote', async () => {
+    if (!canRunGit()) return;
+
+    const { remote, repository } = createRepositoryWithRemote();
+    addOptionLikeRemote(repository, remote, { fetch: false });
+
+    await removeRemote(repository, { remote: OPTION_LIKE_REMOTE });
+
+    expect(runGit(repository, ['remote']).split('\n').map((line) => line.trim())).not.toContain(OPTION_LIKE_REMOTE);
+  }, 30_000);
+
   it('validates a start ref and upstream on an option-like remote', async () => {
     if (!canRunGit()) return;
 
@@ -2451,6 +2478,90 @@ describe('checkoutBranch', () => {
     await expect(checkoutBranch(repository, 'remotes/origin/never-pushed')).rejects.toThrow(
       /Failed to fetch never-pushed from origin/
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pull
+// ---------------------------------------------------------------------------
+
+describe.runIf(canRunGit())('pull', () => {
+  const configureIdentity = (cwd) => {
+    runGit(cwd, ['config', 'user.email', 'test@example.com']);
+    runGit(cwd, ['config', 'user.name', 'Test']);
+  };
+
+  /** `local` tracks `origin/main`; `other` publishes upstream commits. */
+  const createTrackedClones = () => {
+    const bare = createTempDir();
+    const local = createTempDir();
+    runGit(bare, ['init', '--bare', '--initial-branch=main']);
+    runGit(local, ['init', '-b', 'main']);
+    configureIdentity(local);
+    fs.writeFileSync(path.join(local, 'file.txt'), 'base\n');
+    runGit(local, ['add', 'file.txt']);
+    runGit(local, ['commit', '-m', 'base']);
+    runGit(local, ['remote', 'add', 'origin', bare]);
+    runGit(local, ['push', '-u', 'origin', 'main']);
+    const other = createTempDir();
+    runGit(other, ['clone', bare, '.']);
+    configureIdentity(other);
+    return { local, other };
+  };
+
+  const publish = (cwd, name, contents, message) => {
+    fs.writeFileSync(path.join(cwd, name), contents);
+    runGit(cwd, ['add', name]);
+    runGit(cwd, ['commit', '-m', message]);
+    runGit(cwd, ['push', 'origin', 'main']);
+  };
+
+  it('rebases local commits onto upstream and reports the files that came in', async () => {
+    const { local, other } = createTrackedClones();
+    publish(other, 'upstream.txt', 'upstream\n', 'upstream change');
+    fs.writeFileSync(path.join(local, 'local.txt'), 'local\n');
+    runGit(local, ['add', 'local.txt']);
+    runGit(local, ['commit', '-m', 'local change']);
+
+    const result = await pull(local, { remote: 'origin', branch: 'main', rebase: true });
+
+    expect(result.success).toBe(true);
+    expect(result.conflict).toBeUndefined();
+    expect(result.files).toEqual(['upstream.txt']);
+    expect(runGit(local, ['rev-list', '--count', 'origin/main..HEAD']).trim()).toBe('1');
+    expect(runGit(local, ['log', '-1', '--format=%s']).trim()).toBe('local change');
+
+    const upToDate = await pull(local, { remote: 'origin', branch: 'main', rebase: true });
+    expect(upToDate.success).toBe(true);
+    expect(upToDate.files).toEqual([]);
+  });
+
+  it('reports a stopped rebase with its conflicted files instead of throwing', async () => {
+    const { local, other } = createTrackedClones();
+    publish(other, 'file.txt', 'theirs\n', 'upstream edit');
+    fs.writeFileSync(path.join(local, 'file.txt'), 'ours\n');
+    runGit(local, ['add', 'file.txt']);
+    runGit(local, ['commit', '-m', 'local edit']);
+
+    const result = await pull(local, { remote: 'origin', branch: 'main', rebase: true });
+
+    expect(result).toEqual({ success: false, conflict: true, conflictFiles: ['file.txt'] });
+    const status = await getStatus(local);
+    expect(status.rebaseInProgress).toBeTruthy();
+
+    const details = await getConflictDetails(local);
+    expect(details.operation).toBe('rebase');
+    expect(details.headInfo).toMatch(/^REBASE_HEAD: [0-9a-f]{40}$/);
+    expect(details.unmergedFiles).toEqual(['file.txt']);
+  });
+
+  it('still throws when the pull fails without conflicts', async () => {
+    const { local } = createTrackedClones();
+    fs.writeFileSync(path.join(local, 'file.txt'), 'dirty\n');
+
+    await expect(pull(local, { remote: 'origin', branch: 'main', rebase: true })).rejects.toThrow();
+    const status = await getStatus(local);
+    expect(status.rebaseInProgress ?? null).toBeNull();
   });
 });
 

@@ -30,7 +30,9 @@ configureOpenCodeCredentials({
     key('zai-coding-plan'),
     key('zhipuai-coding-plan'),
     key('deepseek'),
+    key('deepinfra'),
     key('hyper'),
+    key('nano-gpt'),
     oauth('github-copilot'),
     oauth('anthropic'),
   ],
@@ -530,6 +532,39 @@ describe('ClinePass quota provider (VS Code parity)', () => {
 });
 
 describe('Codex quota provider (VS Code parity)', () => {
+  for (const { balance, unlimited, expected } of [
+    { balance: 62500, unlimited: false, expected: '62500' },
+    { balance: '62500.00', unlimited: false, expected: '62500' },
+    { balance: 12.3456, unlimited: false, expected: '12.3456' },
+    { balance: '12.3456', unlimited: false, expected: '12.3456' },
+    { balance: 0, unlimited: false, expected: '0' },
+    { balance: null, unlimited: true, expected: 'Unlimited' },
+    { balance: 62500, unlimited: true, expected: 'Unlimited' },
+    { balance: null, unlimited: false, expected: undefined },
+    { balance: 'invalid', unlimited: false, expected: undefined },
+  ]) {
+    test(`displays credit balance ${balance} with unlimited=${unlimited} as ${expected}`, async () => {
+      globalThis.fetch = async () => Response.json({ credits: { balance, unlimited } });
+
+      const result = await fetchQuotaForProvider('codex');
+
+      assert.equal(result.ok, true);
+      assert.ok(result.usage?.windows.credits_balance);
+      assert.equal(result.usage.windows.credits_balance.valueLabel, expected);
+      assert.equal(result.usage.windows.credits_balance.usedPercent, null);
+    });
+  }
+
+  test('omits the balance window when credits are absent', async () => {
+    globalThis.fetch = async () => Response.json({ rate_limit: null });
+
+    const result = await fetchQuotaForProvider('codex');
+
+    assert.equal(result.ok, true);
+    assert.ok(result.usage);
+    assert.equal(result.usage.windows.credits_balance, undefined);
+  });
+
   test('coalesces concurrent refreshes for the same provider', async () => {
     let resolveResponse: ((response: Response) => void) | undefined;
     let requestCount = 0;
@@ -1319,6 +1354,45 @@ describe('NeuralWatt quota provider (VS Code parity)', () => {
   });
 });
 
+describe('DeepInfra quota provider (VS Code parity)', () => {
+  test('shows a negative stripe_balance as spendable credit', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({ checklist: { stripe_balance: -50.75 } })));
+
+    const result = await fetchQuotaForProvider('deepinfra');
+
+    assert.equal(result.ok, true);
+    assert.equal(result.providerId, 'deepinfra');
+    assert.equal(result.usage!.windows.credits_balance!.valueLabel, '$50.75');
+  });
+
+  test('shows a positive stripe_balance as money owed', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({ checklist: { stripe_balance: '5.50' } })));
+
+    const result = await fetchQuotaForProvider('deepinfra');
+
+    assert.equal(result.ok, true);
+    assert.equal(result.usage!.windows.credits_balance!.valueLabel, '-$5.50');
+  });
+
+  test('treats a blank balance as missing data, not as $0.00', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({ checklist: { stripe_balance: '  ' } })));
+
+    const result = await fetchQuotaForProvider('deepinfra');
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'No quota data in response');
+  });
+
+  test('asks to re-authenticate on 401', async () => {
+    stubFetchFailing(async () => ({}), { ok: false, status: 401 });
+
+    const result = await fetchQuotaForProvider('deepinfra');
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'Session expired — please re-authenticate with DeepInfra');
+  });
+});
+
 describe('DeepSeek quota provider (VS Code parity)', () => {
   test('builds credits_balance window from documented USD payload (string balance)', async () => {
     stubFetchReturning(() => Promise.resolve(mockResponse({
@@ -1350,6 +1424,20 @@ describe('DeepSeek quota provider (VS Code parity)', () => {
 
     assert.equal(result.ok, true);
     assert.equal(result.usage!.windows.credits_balance!.valueLabel, '¥100.00');
+  });
+
+  test('reports no quota data instead of guessing a currency it does not know', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({
+      is_available: true,
+      balance_infos: [
+        { currency: 'EUR', total_balance: '12.00', granted_balance: '0.00', topped_up_balance: '12.00' },
+      ],
+    })));
+
+    const result = await fetchQuotaForProvider('deepseek');
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'No quota data in response');
   });
 
   test('selects CNY entry when USD balance is zero and CNY balance is positive', async () => {
@@ -1697,4 +1785,95 @@ describe('Kimi for Coding credential lookup (VS Code parity)', () => {
     });
     assert.equal(authorization, 'Bearer legacy-key');
   });
+});
+
+describe('NanoGPT quota provider (VS Code parity)', () => {
+  const run = async (payload: Parameters<typeof Response.json>[0]) => {
+    stubFetchReturning(async () => Response.json(payload));
+    return fetchQuotaForProvider('nano-gpt');
+  };
+
+  test('reads daily and weekly token quotas with millisecond reset times', async () => {
+    const result = await run({
+      state: 'active', limits: { dailyInputTokens: 1000, weeklyInputTokens: 10000 },
+      dailyInputTokens: { used: 100, percentUsed: 0.1, resetAt: 1893542400000 },
+      weeklyInputTokens: { used: 2500, percentUsed: 0.25, resetAt: 1893974400000 },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.usage?.windows.daily?.usedPercent, 10);
+    assert.equal(result.usage?.windows.daily?.resetAt, 1893542400000);
+    assert.equal(result.usage?.windows.weekly?.usedPercent, 25);
+    assert.equal(result.usage?.windows.weekly?.windowSeconds, 604800);
+    assert.equal(result.usage?.windows.weekly?.resetAt, 1893974400000);
+  });
+
+  test('reads a weekly-only subscription and computes usage from its top-level limit', async () => {
+    const result = await run({
+      limits: { dailyInputTokens: null, weeklyInputTokens: 10000 },
+      dailyInputTokens: null, weeklyInputTokens: { used: 2500 },
+    });
+    assert.equal(Object.keys(result.usage?.windows ?? {}).join(','), 'weekly');
+    assert.equal(result.usage?.windows.weekly?.usedPercent, 25);
+  });
+
+  test('prefers current daily quotas over legacy fields and uses the token limit', async () => {
+    const result = await run({
+      limits: { dailyInputTokens: 1000 },
+      dailyInputTokens: { used: 300 }, daily: { percentUsed: 0.9 },
+    });
+    assert.equal(result.usage?.windows.daily?.usedPercent, 30);
+  });
+
+  test('keeps unavailable quota reads unknown', async () => {
+    const result = await run({
+      limits: { dailyInputTokens: 1000, weeklyInputTokens: 10000 },
+      dailyInputTokens: { used: null, percentUsed: null, resetAt: null, degraded: true },
+      weeklyInputTokens: { used: null, percentUsed: null, resetAt: null, degraded: true },
+    });
+    assert.equal(result.usage?.windows.daily?.usedPercent, null);
+    assert.equal(result.usage?.windows.weekly?.usedPercent, null);
+    assert.equal(result.usage?.windows.weekly?.remainingPercent, null);
+  });
+
+  test('preserves zero and clamps exhausted quotas', async () => {
+    const result = await run({
+      dailyInputTokens: { percentUsed: 0 }, weeklyInputTokens: { percentUsed: 1.1 },
+    });
+    assert.equal(result.usage?.windows.daily?.usedPercent, 0);
+    assert.equal(result.usage?.windows.weekly?.usedPercent, 100);
+  });
+
+  test('preserves legacy daily and monthly response support', async () => {
+    const result = await run({
+      state: 'grace', period: { currentPeriodEnd: 1893974400000 },
+      daily: { percentUsed: 0.4 }, monthly: { used: 50, limit: 100 },
+    });
+    assert.equal(result.usage?.windows.daily?.usedPercent, 40);
+    assert.equal(result.usage?.windows.monthly?.usedPercent, 50);
+    assert.equal(result.usage?.windows.monthly?.resetAt, 1893974400000);
+    assert.equal(result.usage?.windows.daily?.valueLabel, '(grace)');
+  });
+
+  test('does not invent quotas when the account has none', async () => {
+    const result = await run({ active: false, dailyInputTokens: null, weeklyInputTokens: null });
+    assert.equal(result.ok, true);
+    assert.equal(Object.keys(result.usage?.windows ?? {}).length, 0);
+  });
+
+  test('reports HTTP failures rather than empty success', async () => {
+    stubFetchReturning(async () => new Response(null, { status: 401 }));
+    const result = await fetchQuotaForProvider('nano-gpt');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'API error: 401');
+  });
+  test('does not revive a legacy daily cap when the current cap is null', async () => {
+    const result = await run({ dailyInputTokens: null, daily: { percentUsed: 0.9 } });
+    assert.equal(Object.keys(result.usage?.windows ?? {}).length, 0);
+  });
+
+  test('rejects malformed quota responses instead of reporting empty success', async () => {
+    const result = await run({ weeklyInputTokens: 'invalid' });
+    assert.equal(result.ok, false);
+  });
+
 });

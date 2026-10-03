@@ -406,7 +406,7 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (typeof candidate.largeTextPasteBehavior === 'string') {
       const mode = candidate.largeTextPasteBehavior.trim();
-      if (mode === 'ask' || mode === 'attach' || mode === 'inline') {
+      if (mode === 'ask' || mode === 'attach' || mode === 'inline' || mode === 'inline-double-paste') {
         result.largeTextPasteBehavior = mode;
       }
     }
@@ -436,6 +436,9 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (candidate.sessionGoalChecker === 'classifier' || candidate.sessionGoalChecker === 'small-model') {
       result.sessionGoalChecker = candidate.sessionGoalChecker;
+    }
+    if (Number.isInteger(candidate.sessionGoalMaxAutoTurns) && candidate.sessionGoalMaxAutoTurns >= 1 && candidate.sessionGoalMaxAutoTurns <= 200) {
+      result.sessionGoalMaxAutoTurns = candidate.sessionGoalMaxAutoTurns;
     }
     if (typeof candidate.sessionGoalDefaultBudgetEnabled === 'boolean') {
       result.sessionGoalDefaultBudgetEnabled = candidate.sessionGoalDefaultBudgetEnabled;

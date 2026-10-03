@@ -26,10 +26,9 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - If you want to change expandable tool layout, edit here.
 
 - `taskToolModel.ts`
-  - Owns subagent metadata parsing and child-session summary projection.
-  - `part.state.metadata.sessionID` is the only live identity contract between a `subagent` call and its child session.
-  - A running subagent may briefly have no session id; render it as waiting until the authoritative part update arrives. Never match parallel children by order, title, timestamp, or status.
-  - Part-level metadata and output parsing exist only for older persisted records and never override state metadata.
+  - Owns subagent metadata parsing and child-session summary projection. `ToolPart.tsx` resolves the call's child identity.
+  - A subagent's `state.metadata.sessionID` is the preferred child identity from progress/result updates. Legacy part metadata and output IDs remain readable, then a non-empty `state.input.sessionID` identifies a resumed child when those IDs are absent.
+  - If none of those sources names a child, a running call may infer one from child sessions created at or after the call start. Candidates must belong to the parent, match the requested agent when the session has one, and remain unclaimed by sibling calls. A unique candidate is accepted; when several remain, the call description must uniquely match the child title. Ambiguous calls stay unlinked. Inference never pairs children by sibling order or status.
 
 - `toolPresentation.tsx`
   - Shared icon mapping for tool names (`getToolIcon`).
@@ -117,14 +116,25 @@ pre-collapse height on the DOM indefinitely. Failed animations also settle;
 callbacks from cancelled, superseded animations never settle a newer target.
 
 The virtualizer also adds temporary end padding while compensating prepended
-history. The Bun patch for `@legendapp/list@3.3.10` stores that padding's CSSOM
-read-back value: Chromium rounds fractional pixel strings, so comparing the
-original input with `style.paddingBottom` can skip cleanup permanently. This
-leaves a phantom tail even when every Activity region is already zero-height.
-The patch covers both web entry points in ESM and CJS; its installed-controller
-regression tests live in `scripts/legend-list-padding.test.mjs`. Retain this
-fix when updating the dependency unless upstream has equivalent ownership and
-cleanup behavior. Chat padding and scroll policies do not compensate for it.
+history. `@legendapp/list` stores that padding's CSSOM read-back value (built
+in since 3.3.11; it was a Bun patch before): Chromium rounds fractional pixel
+strings, so comparing the original input with `style.paddingBottom` could skip
+cleanup permanently and leave a phantom tail even when every Activity region is
+already zero-height. `scripts/legend-list-padding.test.mjs` checks the
+installed version for it. Chat padding and scroll policies do not compensate
+for it.
+
+The Bun patch for `@legendapp/list@3.6.0` floors `roundSize` to the device
+pixel grid instead of eighth pixels, mirroring upstream LegendApp/legend-list#536.
+Rows the list has not measured yet are placed at the average measured height;
+with eighth-pixel precision their positions are fractional, the browser rounds
+each `scrollTop` correction, and the remainder is lost on every compensation
+pass. A history prepend then leaves the reader's row one to two pixels off
+(3.3.10 drifted too; the browser harness passed only because its row heights
+happened to average to a whole pixel). The patch covers both web entry points
+in ESM and CJS. Drop it once upstream ships #536 or an equivalent, and verify
+with `bun packages/ui/tests/chat-history-scroll.browser.mjs`, which runs the
+prepend scenarios over several row-height profiles for this reason.
 
 The header retains its report when expanded and has no hover background. Its
 left inset matches sorted Activity. Diff deletions use the ASCII hyphen.
