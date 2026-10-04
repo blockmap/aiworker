@@ -105,6 +105,9 @@
     "githubScopes": {
       "scope": "instance"
     },
+    "gitlabClientId": {
+      "scope": "instance"
+    },
     "skillCatalogs": {
       "scope": "instance"
     },
@@ -487,6 +490,9 @@
       "scope": "profile"
     },
     "collapsedModelProviders": {
+      "scope": "profile"
+    },
+    "customProviderIcons": {
       "scope": "profile"
     },
     "recentModels": {

@@ -269,6 +269,27 @@ const latestCompletedAssistantMessageID = async ({ client, sessionID }) => {
 };
 
 /**
+ * The id of the newest `idle` record OpenCode appended to the session (it
+ * marks the end of a run), null when the session has none, or undefined when
+ * the history could not be read. A later delivery compares record ids, never
+ * clock times, so a remote OpenCode with a skewed clock still matches.
+ */
+const latestIdleRecordID = async ({ client, sessionID }) => {
+  let messages;
+  try {
+    messages = await listMessages({ client, sessionID, limit: 100 });
+  } catch {
+    return undefined;
+  }
+  let latest = null;
+  for (const message of messages) {
+    if (message?.type !== 'idle' || !asNonEmptyString(message?.id)) continue;
+    if (!latest || (message.time?.created || 0) >= (latest.time?.created || 0)) latest = message;
+  }
+  return latest ? latest.id : null;
+};
+
+/**
  * Upper bound on one archive batch.
  *
  * The batch is a bounded amount of work on one request, and callers with more
@@ -370,6 +391,8 @@ export const createOpenChamberSessionService = (dependencies) => {
     broadcastGlobalUiEvent,
     createSessionGoal: createSessionGoalOverride,
     sessionKnowledgeRuntime = null,
+    worktreeBootstrapStore,
+    hydrateWorktreeCheckout,
     dataDir = null,
     archiveStore: injectedArchiveStore = null,
     sessionMetadataStore: injectedSessionMetadataStore = null,
@@ -407,10 +430,10 @@ export const createOpenChamberSessionService = (dependencies) => {
     directory,
   });
 
-  const waitForWorktreeBootstrapReady = async ({ directory }) => {
+  const waitForWorktreeBootstrapReady = async ({ directory, bootstrapStore }) => {
     const deadline = Date.now() + WORKTREE_BOOTSTRAP_TIMEOUT_MS;
     for (;;) {
-      const status = await getWorktreeBootstrapStatus(directory);
+      const status = await getWorktreeBootstrapStatus(directory, { bootstrapStore });
       if (status?.status === 'failed') {
         throw new OpenChamberControlError(`Worktree bootstrap failed: ${status.error || 'unknown error'}`, 500);
       }
@@ -779,9 +802,25 @@ export const createOpenChamberSessionService = (dependencies) => {
     }
 
     if (worktreeInput) {
-      worktree = await createWorktree(resolvedDirectory.directory, worktreeInput);
+      if (!(hydrateWorktreeCheckout instanceof Function)
+        || !(worktreeBootstrapStore?.read instanceof Function)
+        || !(worktreeBootstrapStore?.write instanceof Function)) {
+        throw new OpenChamberControlError('Worktree checkout bootstrap is not available', 501);
+      }
+      const hydrateCheckout = ({ directory, parentRemoteName }) => hydrateWorktreeCheckout({
+        directory,
+        parentDirectory: resolvedDirectory.directory,
+        parentRemoteName,
+      });
+      worktree = await createWorktree(resolvedDirectory.directory, worktreeInput, {
+        bootstrapStore: worktreeBootstrapStore,
+        hydrateCheckout,
+      });
       sessionDirectory = worktree.path;
-      await waitForWorktreeBootstrapReady({ directory: sessionDirectory });
+      await waitForWorktreeBootstrapReady({
+        directory: sessionDirectory,
+        bootstrapStore: worktreeBootstrapStore,
+      });
     }
 
     const baseUrl = openCodeBaseUrl();
@@ -905,6 +944,7 @@ export const createOpenChamberSessionService = (dependencies) => {
         client,
         sessionID: targetSessionID,
       });
+      const baselineIdleRecordId = await latestIdleRecordID({ client, sessionID: targetSessionID });
 
       const dispatch = await dispatchPrompt({
         client,
@@ -927,6 +967,7 @@ export const createOpenChamberSessionService = (dependencies) => {
         ...(action === 'fork' ? { sourceSessionId: sourceSessionID } : {}),
         ...(targetSession?.title ? { title: targetSession.title } : {}),
         ...(baselineAssistantMessageId ? { baselineAssistantMessageId } : {}),
+        ...(baselineIdleRecordId !== undefined ? { baselineIdleRecordId } : {}),
         model: dispatch.model,
         ...(dispatch.agent ? { agent: dispatch.agent } : {}),
         ...(dispatch.variant ? { variant: dispatch.variant } : {}),

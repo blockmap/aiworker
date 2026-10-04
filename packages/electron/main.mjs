@@ -51,6 +51,7 @@ import {
   wasEarlyWindowClosed,
 } from './early-startup.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
+import { isSplashColor, redactHostsConfigForRemote } from './remote-page-policy.mjs';
 import { isPackagedUiRuntimeRequest } from './packaged-ui-routing.mjs';
 import { probeDirectHostWithRetry } from './host-probe-policy.mjs';
 import { probeElectronHostWithDeadline } from './electron-host-probe.mjs';
@@ -2339,8 +2340,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
       });
       return { action: 'deny' };
     }
+    // A page of this app opened into a new window would be a bare browser
+    // window: no desktop runtime, no window chrome, no credentials. A link to
+    // a session here moves this window to it; any other app page stays put.
     if (isAllowedNavigationUrl(url, { includeHosts: false })) {
-      return { action: 'allow' };
+      const route = sessionRouteFromUrl(url);
+      if (route) emitToWindow(browserWindow, 'openchamber:open-session', route);
+      return { action: 'deny' };
     }
     void shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
@@ -4377,7 +4383,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (splash) {
         const colors = {};
         for (const key of ['bgLight', 'fgLight', 'bgDark', 'fgDark']) {
-          if (typeof splash[key] === 'string' && splash[key].trim()) colors[key] = splash[key].trim();
+          if (isSplashColor(splash[key])) colors[key] = splash[key];
         }
         if (Object.keys(colors).length === 4) {
           const current = readSettingsRoot().desktopSplashColors;
@@ -5078,8 +5084,10 @@ ipcMain.handle('openchamber:invoke', async (event, command, args) => {
     log.warn(`[ipc] rejected ${command} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
     throw new Error('IPC not available for this origin');
   }
+  const local = isLocalSender(event.sender);
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
-  return handleInvoke(browserWindow, command, args);
+  const result = await handleInvoke(browserWindow, command, args);
+  return !local && command === 'desktop_hosts_get' ? redactHostsConfigForRemote(result) : result;
 });
 
 ipcMain.handle('openchamber:dialog:open', async (event, options) => {

@@ -18,7 +18,7 @@ import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.j
 import { createTunnelProviderRegistry } from './lib/tunnels/registry.js';
 import { createCloudflareTunnelProvider } from './lib/tunnels/providers/cloudflare.js';
 import { createNgrokTunnelProvider } from './lib/tunnels/providers/ngrok.js';
-import { createRequestSecurityRuntime } from './lib/security/request-security.js';
+import { allowsLocalDevOrigins, buildFrameAncestorsPolicy, createRequestSecurityRuntime, isLocalDevClientOrigin } from './lib/security/request-security.js';
 import {
   getUnauthenticatedLanErrorMessage,
   isLoopbackBindHost,
@@ -67,6 +67,7 @@ import { createThemeRuntime } from './lib/opencode/theme-runtime.js';
 import { createFeatureRoutesRuntime } from './lib/opencode/feature-routes-runtime.js';
 import { parseServeCliOptions } from './lib/opencode/cli-options.js';
 import {
+  isRequestAuthorized,
   registerAuthAndAccessRoutes,
   registerCommonRequestMiddleware,
   registerServerStatusRoutes,
@@ -103,6 +104,7 @@ import { createApnsRuntime } from './lib/notifications/apns-runtime.js';
 import { createNotificationTemplateRuntime } from './lib/notifications/template-runtime.js';
 import { createPermissionAutoAcceptRuntime } from './lib/permission-auto-accept/runtime.js';
 import { createMessageQueueRuntime } from './lib/message-queue/runtime.js';
+import { createDispatchResultsRuntime } from './lib/dispatch-results/runtime.js';
 import { createRoutingRuntime } from './lib/routing/runtime.js';
 import { createJevClient } from './lib/routing/jev.js';
 import { createSessionWorkRuntime } from './lib/session-work/runtime.js';
@@ -126,6 +128,7 @@ import { readIdleStopSetting, startIdleStop } from './lib/spaces/idle-stop.js';
 import { SPACE_IDLE_EXIT_CODE } from './lib/spaces/layout.js';
 import { createSwitchController, registerSpaceRoutes } from './lib/spaces/routes.js';
 import { resolvePrimaryWorktreeRoot } from './lib/git/service.js';
+import { createWorktreeBootstrapStore } from './lib/git/worktree-bootstrap-storage.js';
 import { createRemoteClientAuthRuntime } from './lib/client-auth/remote-clients.js';
 import { createClientPairingRuntime } from './lib/client-auth/pairing.js';
 import { attachRealtimeProxy } from './lib/realtime-proxy.js';
@@ -356,6 +359,10 @@ const CLIENT_PAIRING_SESSIONS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'clien
 const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-managed-remote-tunnels.json');
 const CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-named-tunnels.json');
 const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION = 1;
+const worktreeBootstrapStore = createWorktreeBootstrapStore({
+  filePath: path.join(OPENCHAMBER_DATA_DIR, 'git-worktree-bootstrap.json'),
+  fsImpl: fsPromises,
+});
 
 const managedTunnelConfigRuntime = createManagedTunnelConfigRuntime({
   fsPromises,
@@ -443,6 +450,7 @@ const persistSettings = (...args) => settingsRuntime.persistSettings(...args);
 
 const requestSecurityRuntime = createRequestSecurityRuntime({
   readSettingsFromDiskMigrated,
+  allowLocalDevOrigins: allowsLocalDevOrigins(process.env),
 });
 
 const getUiSessionTokenFromRequest = (...args) => requestSecurityRuntime.getUiSessionTokenFromRequest(...args);
@@ -1071,6 +1079,18 @@ const messageQueueRuntime = createMessageQueueRuntime({
 });
 messageQueueRuntime.start();
 
+// Sessions an agent dispatched with `returnResult` report back to it: their
+// final answer lands in the dispatching session and wakes it.
+const dispatchResultsRuntime = createDispatchResultsRuntime({
+  globalEventHub: globalMessageStreamHub,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  dataDir: OPENCHAMBER_DATA_DIR,
+  // Declared further down; only ever called after startup.
+  isSessionArchived: (sessionID) => openChamberSessionService.archiveStore.isArchived(sessionID),
+});
+dispatchResultsRuntime.start();
+
 // Full-text search over this server's conversations (user messages and agent
 // replies). Opt-in: off by default, and off means idle. The index is derived
 // data in the data dir, fed from the same event stream; see lib/message-search.
@@ -1255,6 +1275,8 @@ const staticRoutesRuntime = createStaticRoutesRuntime({
   readSettingsFromDiskMigrated,
   normalizePwaAppName,
   normalizePwaOrientation,
+  // uiAuthController is created at startup, after this runtime: read it per request.
+  isRequestAuthorized: (req, res) => isRequestAuthorized(req, res, { tunnelAuthController, uiAuthController }),
 });
 const remoteClientAuthRuntime = createRemoteClientAuthRuntime({
   fsPromises,
@@ -1587,6 +1609,8 @@ const openChamberSessionService = createOpenChamberSessionService({
   waitForOpenCodeReady,
   emitSessionCreatedEvent,
   sessionKnowledgeRuntime,
+  worktreeBootstrapStore,
+  hydrateWorktreeCheckout: featureRoutesRuntime.hydrateBoundCheckout,
   // OpenCode 2.x has no archive route, so the state is OpenChamber's own and
   // lives beside the instance it describes.
   dataDir: OPENCHAMBER_DATA_DIR,
@@ -1712,6 +1736,8 @@ const openChamberControlService = createOpenChamberControlService({
     updateMetadata: updateSessionMetadataWith,
     createError: (message, status) => new OpenChamberControlError(message, status),
   }),
+  dispatchResults: dispatchResultsRuntime,
+  archiveStore: openChamberSessionService.archiveStore,
 });
 
 const ensureGlobalWatcherStarted = async () => {
@@ -1763,6 +1789,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   sessionGoalRuntime,
   contextObligatoryRuntime,
   messageQueueRuntime,
+  dispatchResultsRuntime,
   messageSearchRuntime,
   sessionRuntime,
   getHealthCheckInterval: () => healthCheckInterval,
@@ -2037,14 +2064,34 @@ async function main(options = {}) {
     'http://localhost',
     'https://localhost',
   ]);
-  const isLocalDevClientOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
-  app.set('trust proxy', true);
+  const allowLocalDevOrigins = allowsLocalDevOrigins(process.env);
+  // Keeps other sites from framing the app (clickjacking). Routes that serve
+  // untrusted documents set a Content-Security-Policy of their own, which
+  // replaces this one.
+  const frameAncestorsPolicy = buildFrameAncestorsPolicy({
+    allowLocalDevOrigins,
+    extra: process.env.OPENCHAMBER_FRAME_ANCESTORS,
+  });
+  // Forwarded headers are believed only from a proxy on this machine or a
+  // private network (cloudflared, Docker, a LAN reverse proxy). From anyone
+  // else they are the client's own words, and the login rate limit keys on
+  // req.ip, so a client must not be able to name its own address.
+  app.set('trust proxy', 'loopback, linklocal, uniquelocal');
   // Keep self-hosted instances out of search engines. The app shell is served
   // publicly (it loads before prompting for the UI password), so without this
   // even a password-protected instance gets crawled and indexed. Applies to
   // every response; the robots.txt route makes the intent explicit for crawlers.
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    // The preview proxy relays a dev server's own pages, whose types and
+    // referrer behaviour are that app's business. Everything else is ours:
+    // served with real types, and its address (a tunnel host, short-lived
+    // auth tokens, session ids) never follows a link out as a Referer.
+    if (!req.path.startsWith('/api/preview/proxy/')) {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Referrer-Policy', 'same-origin');
+      res.setHeader('Content-Security-Policy', frameAncestorsPolicy);
+    }
     next();
   });
   app.get('/robots.txt', (_req, res) => {
@@ -2052,7 +2099,7 @@ async function main(options = {}) {
   });
   app.use((req, res, next) => {
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
-    if (packagedClientOrigins.has(origin) || isLocalDevClientOrigin(origin)) {
+    if (packagedClientOrigins.has(origin) || (allowLocalDevOrigins && isLocalDevClientOrigin(origin))) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
@@ -2369,6 +2416,12 @@ async function main(options = {}) {
     // Dev-server discovery must not offer OpenChamber's own listeners back to
     // the user as something to preview.
     getOwnPorts: () => [port, openCodePort].filter((value) => Number.isInteger(value) && value > 0),
+    getActivePort: () => {
+      const address = server?.address?.();
+      return address && Number.isInteger(address.port) ? address.port : null;
+    },
+    // A pipe listener reports a string here, which has no address to bind back to.
+    getActiveHost: () => server?.address?.()?.address ?? null,
     devServerScanner,
     buildAugmentedPath,
     projectConfigRuntime,
@@ -2385,6 +2438,7 @@ async function main(options = {}) {
     getOpenChamberEventClients: () => uiOpenChamberEventClients,
     writeSseEvent,
     permissionAutoAcceptRuntime,
+    worktreeBootstrapStore,
     messageQueueRuntime,
     routingRuntime,
   });
@@ -2424,6 +2478,13 @@ async function main(options = {}) {
     setupProxy,
     scheduleOpenCodeApiDetection,
     bootstrapOpenCodeAtStartup,
+    // Git's credential helper reaches the server through a file that names
+    // the port, so it is written once the port is known and before OpenCode,
+    // whose shells will use it, starts.
+    onListenerReady: async () => {
+      try { await featureRoutesRuntime.publishRepositoryCredentialEndpoint(); }
+      catch (error) { console.warn('Git credential helper endpoint was not published:', error instanceof Error ? error.message : String(error)); }
+    },
     triggerHealthCheck,
     staticRoutesRuntime,
     process,

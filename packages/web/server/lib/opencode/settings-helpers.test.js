@@ -69,6 +69,13 @@ const createTestHelpersWithRealSanitizers = () => {
 };
 
 describe('settings helpers', () => {
+  it('sanitizes the optional GitLab OAuth client ID', () => {
+    const helpers = createTestHelpers();
+    expect(helpers.sanitizeSettingsUpdate({ gitlabClientId: ' client-id ' })).toEqual({ gitlabClientId: 'client-id' });
+    expect(helpers.sanitizeSettingsUpdate({ gitlabClientId: '' })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ gitlabClientId: 42 })).toEqual({});
+  });
+
   it('round-trips section order and preserves it across unrelated writes', () => {
     const helpers = createTestHelpers();
     const changes = helpers.sanitizeSettingsUpdate({ workStatusSectionOrder: ['mcp', 'session', 'mcp', null, ''] });
@@ -607,6 +614,13 @@ describe('settings helpers', () => {
       expect(hiddenResult.hiddenModels).toEqual(favoriteResult.favoriteModels);
     });
 
+    it('keeps custom provider icons it knows and drops the rest entry by entry', () => {
+      const helpers = createTestHelpersWithRealSanitizers();
+      expect(helpers.sanitizeSettingsUpdate({
+        customProviderIcons: { 'campus-llm': 'cloud', other: 'rocket', '': 'server', local: 'ai' },
+      })).toEqual({ customProviderIcons: { 'campus-llm': 'cloud', local: 'ai' } });
+    });
+
     it('round-trips collapsedModelProviders and recentAgents as string arrays', () => {
       const helpers = createTestHelpersWithRealSanitizers();
 
@@ -769,7 +783,7 @@ describe('settings registry gate', () => {
     projects: [{ id: 'p', path: '/home/testuser/project' }], activeProjectId: 'p',
     securityScopedBookmarks: ['bookmark'], pinnedDirectories: ['/home/testuser/project'],
     desktopLanAccessEnabled: true, desktopKeepAwakeEnabled: true, desktopMinimizeToTrayEnabled: true, desktopMacMenuBarEnabled: true,
-    desktopUiPassword: 'secret', githubClientId: 'client', githubScopes: 'repo', skillCatalogs: [{ id: 'c', label: 'C', source: 'https://x' }],
+    desktopUiPassword: 'secret', githubClientId: 'client', githubScopes: 'repo', gitlabClientId: 'gitlab-client', skillCatalogs: [{ id: 'c', label: 'C', source: 'https://x' }],
     defaultGitIdentityId: 'global', permissionAutoAccept: { sessions: { s: true }, revision: 1 }, permissionDefaultMode: 'safety', messageSearchEnabled: true, messageSearchReasoningEnabled: true,
     agentControlToolEnabled: true, agentWebToolEnabled: true, browserProvider: 'builtin', agentMemoryToolEnabled: true, agentNotifyToolEnabled: true, agentToolsCodeMode: true, isolatedSpacesEnabled: true, isolatedSpacesIdleStop: { enabled: true, hours: 4 }, openCodeUpdateToastDismissedVersion: '1.0.0',
     autoDeleteEnabled: true, autoDeleteAfterDays: 30, sessionRetentionOnlyArchived: false, sessionRetentionAction: 'archive', mergedWorktreeCleanupEnabled: true, terminalShell: 'zsh', terminalLoginShells: ['zsh'],
@@ -804,6 +818,7 @@ describe('settings registry gate', () => {
     globalBehaviorPrompt: 'Be brief.', responseStyleEnabled: true, responseStylePreset: 'concise', responseStyleCustomInstructions: 'x',
     pwaAppName: 'OpenChamber', pwaOrientation: 'portrait', mobileKeyboardMode: 'native', desktopWindowControlsPosition: 'left', desktopWindowControlsStyle: 'classic',
     inputBarOffset: 10,
+    customProviderIcons: { 'campus-llm': 'cloud' },
   };
 
   it('accepts a valid value for every persistable registry key (no server-side drift)', () => {

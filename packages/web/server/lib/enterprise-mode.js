@@ -30,7 +30,8 @@ import { z } from 'zod';
  * at its own server boundary:
  * - Model providers come only from the OpenCode config: connecting one,
  *   signing in, adding a key or creating a custom provider through this
- *   server is refused (`opencode/routes.js`). OpenCode's `provider.use`
+ *   server is refused, as is probing a custom provider's model endpoint
+ *   (`opencode/routes.js`). OpenCode's `provider.use`
  *   policy is the real lock; this closes the way in through the app.
  *   Signing in to a remote MCP server from the OpenCode config uses the same
  *   routes and stays allowed.
@@ -43,6 +44,11 @@ import { z } from 'zod';
  *   `dictation`).
  * - Push notifications carry no message text or session name (`notifications`).
  * - Update checks still run but never report usage (`package-manager.js`).
+ * - The draw.io diagram editor, diagrams.net's own page in a frame, is not
+ *   loaded; a .drawio file opens as its XML (`packages/ui` FilesView). The
+ *   crossing happens in the browser, so the UI is where it is held back.
+ * - Web fonts that load from a public CDN fall back to the system fonts
+ *   (`packages/ui` useFontPreferences); the stored choice is kept.
  * - The server listens only on this machine unless network access is allowed
  *   (`allowNetworkAccess` / `OPENCHAMBER_ALLOW_NETWORK_ACCESS`): it refuses
  *   to start on a network address and drops connections from other machines

@@ -29,7 +29,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/npm-registry-config.js`: resolves npm package metadata requests from inherited npm registry settings or the user's `.npmrc`, including scoped registries and matching bearer/basic HTTP authentication.
 - `packages/web/server/lib/opencode/server-startup-runtime.js`: server listen/startup tunnel flow and process/signal handler orchestration runtime.
 - `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring.
-- `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
+- `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration. Source-control provider registration is delegated to `lib/source-control/routes.js`. One exact persisted-credential resolver, including optional revision pinning, is shared by transport binding, clone planning, contributor transfer, execution, and safe HTTPS binding-read presentation. The managed SSH inventory supplies the matching verified-fingerprint projection without exposing its key record or path. Server composition supplies one durable worktree-bootstrap store to both Git and OpenChamber-session routes; the runtime exposes a lazy bound-checkout hydration adapter so session-created worktrees use the same local inspection and exact parent authority rules as Git-route worktrees.
 - `packages/web/server/lib/opencode/opencode-resolution-runtime.js`: OpenCode binary resolution snapshot runtime for settings routes and diagnostics.
 - `packages/web/server/lib/opencode/upgrade-capability.js`: authoritative upgrade ownership policy for the active OpenCode runtime. Bundled, external, and unresolved runtimes fail closed; only managed non-bundled runtimes delegate upgrades to OpenCode.
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: tunnel service/routes composition runtime and active-port wiring for main server startup.
@@ -58,6 +58,7 @@ unless an output schema is declared; and a tool call no longer receives
 and OpenChamber resolves the directory itself.
 - `packages/web/server/lib/opencode/server-utils-runtime.js`: shared server runtime utilities for OpenCode proxy wiring, OpenCode port/readiness helpers, and snapshot fetchers.
 - `packages/web/server/lib/opencode/openchamber-routes.js`: OpenChamber update and models metadata route registration.
+- `packages/web/server/lib/opencode/model-discovery.js`: bounded custom-provider `/models` discovery and optional models.dev enrichment. It accepts only http(s), does not follow redirects, filters transport headers, never returns credentials, and treats models.dev failure as unenriched success. Edit requests may name the provider so the host can use its OpenCode-stored key when the form leaves the key blank, but only while the form's base URL still matches the saved one, so a changed URL never receives the stored credential; an explicitly entered replacement key wins.
 - `packages/web/server/lib/opencode/pwa-manifest-routes.js`: PWA manifest route registration with recent-session shortcut resolution and short-lived caching.
 - `packages/web/server/lib/opencode/project-icon-routes.js`: project icon upload/read/discovery route registration and icon storage orchestration.
 - `packages/web/server/lib/opencode/skill-routes.js`: route registration for skill config CRUD, supporting files, and skills catalog scan/install flows.
@@ -227,6 +228,7 @@ Hard rules, verified against v2.0.8 (the completion stamp against v2.0.16)
   - `GET /api/opencode/upgrade-status` (returns version availability plus the authoritative `upgrade.supported`, `upgrade.manager`, and `upgrade.reason` capability)
   - `GET /api/provider/:providerId/source`
   - `PUT /api/provider` (create/update custom OpenAI-compatible provider config in OpenCode user/project/custom layers via `scope`; secrets stay in auth via the OpenCode auth API)
+  - `POST /api/provider/discover-models` (user-initiated custom-provider model discovery; fetches the configured `/models` path server-side and optionally enriches exact model matches from the shared models.dev cache)
   - `DELETE /api/provider/:providerId/auth`
   - Enterprise mode (`../enterprise-mode.js`): `PUT /api/provider` and the OpenCode writes that would otherwise pass the generic proxy — every `POST` under `/api/integration/:id/connect` (key, OAuth start and complete, command), `POST /api/credential` (stores a key, OpenCode 2.0.20) and `POST /api/experimental/integration/wellknown`, matched by `isProviderConnectRequest` — answer 403 `enterprise_mode`. The matcher mirrors how OpenCode 2.0.18 to 2.0.20 route a path (any letter case, doubled slashes, `\` for `/`, percent escapes, anything after `;`), refuses a dot segment or a bad escape, and needs rechecking when OpenCode changes its router. Signing in to a remote MCP server (`POST /api/integration/mcp_<16 hex>/connect/oauth` and its `/:attempt/complete`) passes: it reaches a tool server from the OpenCode config, not a model provider. The VS Code extension host refuses the same requests with the same matcher. Removing, activating or renaming an existing credential still reaches OpenCode. This closes the way in through the app; OpenCode's `provider.use` policy is the real lock.
 - Owns lazy auth library loading for provider auth checks/removal.
@@ -726,7 +728,8 @@ headers }` or v1 `{ npm, options }`. The stored entry is always a
 - `registerServerStatusRoutes(app, dependencies)`: registers status/system endpoints:
   - `GET /health`
   - `POST /api/system/shutdown`
-  - `GET /api/system/info`
+  - `GET /api/system/info`: open before login, because the CLI matches `pid` against its pid file to recognise its own server. `port` and `tunnelUrl` are included only for a caller `isRequestAuthorized` accepts.
+- `isRequestAuthorized(req, res, { tunnelAuthController, uiAuthController })`: whether a request carries credentials `/api` would accept, without refusing it. Routes open before login use it to leave private details out.
  - `registerAuthAndAccessRoutes(app, dependencies)`: registers browser auth/session exchange and API access middleware:
    - `GET /auth/session`
    - `POST /auth/session`
@@ -792,6 +795,7 @@ headers }` or v1 `{ npm, options }`. The stored entry is always a
 - `createFeatureRoutesRuntime(dependencies)`: creates runtime for main feature route registration orchestration.
 - Returned API:
   - `registerRoutes(app, routeDependencies)`
+  - `hydrateBoundCheckout({ directory, parentDirectory, parentRemoteName })`: resolves the parent repository's current binding authority at call time, then delegates local inspection and any explicit hydration to the runtime's existing Git network-operation service.
 
 ## Public exports (opencode-resolution-runtime.js)
 - `createOpenCodeResolutionRuntime(dependencies)`: creates runtime for OpenCode binary/source snapshot resolution.
@@ -855,7 +859,7 @@ within a ten-minute overall deadline.
 
 ## Public exports (pwa-manifest-routes.js)
 - `registerPwaManifestRoute(app, dependencies)`: registers PWA manifest endpoint with dynamic app-name resolution and recent-session shortcuts:
-  - `GET /manifest.webmanifest`
+  - `GET /manifest.webmanifest`: served without API auth (the browser fetches it with cookies, `crossorigin="use-credentials"`). Session shortcuts, which carry session titles, are added only for an authorized caller, and their directory is the one the UI last used, never one named in the request.
 
 ## Public exports (project-icon-routes.js)
 - `registerProjectIconRoutes(app, dependencies)`: registers project icon routes and owns icon storage/discovery flow:
@@ -896,7 +900,10 @@ Git bootstrap must reach `git-ready` before OpenCode can cache a new worktree's
 project identity or config. Setup scripts may still be running; the optional UI
 setup wait remains separate. Failed or timed-out checkout returns 503 without
 forwarding. The shared draft creator keeps the project directory selected until
-creation returns, because preview paths have no bootstrap state.
+creation returns, because preview paths have no bootstrap state. A directory with
+no bootstrap state was never populated by this server and passes at once. The gate
+reads the in-memory state only: the durable bootstrap store takes a cross-process
+file lock per read, which must not sit on every proxied request.
 
 This server gate covers web, Electron, hosted mobile, and Capacitor connections.
 The VS Code extension owns its separate Git and proxy implementation.
@@ -920,7 +927,8 @@ The VS Code extension owns its separate Git and proxy implementation.
 - User config: `<config dir>/opencode.json(c)` where the config dir is `OPENCODE_CONFIG_DIR`, else `$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`. The v1 `config.json` is not read.
 - Project config: `<workingDirectory>/.opencode/opencode.json(c)` first, else `<workingDirectory>/opencode.json(c)`.
 - Custom config: `OPENCODE_CONFIG` env var path.
-- Rate limit config: `OPENCHAMBER_RATE_LIMIT_MAX_ATTEMPTS`, `OPENCHAMBER_RATE_LIMIT_NO_IP_MAX_ATTEMPTS` env vars.
+- Origins (`../security/request-security.js`): CORS with credentials and socket upgrades trust the request's own host, `publicOrigin`, and the packaged clients (`openchamber-ui://app`, `capacitor://localhost`, `https://localhost`). Any other loopback port is trusted only on a development server (`OPENCHAMBER_ELECTRON_DEV=1` or `OPENCHAMBER_ALLOW_DEV_ORIGINS=1`, which the dev scripts set). Without a UI password a socket that names an `Origin` must still come from one of these (`isPasswordlessSocketOriginAllowed`): nothing else would stop a website open in the user's browser from reaching the terminal on the loopback port. Clients that send no `Origin` are not pages and pass.
+- Rate limit config: `OPENCHAMBER_RATE_LIMIT_MAX_ATTEMPTS`, `OPENCHAMBER_RATE_LIMIT_NO_IP_MAX_ATTEMPTS` env vars. Login and tunnel-connect limits key on `req.ip`. `server/index.js` sets `trust proxy` to loopback and private ranges, so `X-Forwarded-For` counts only when a proxy on this machine or a private network sent it; from anyone else it is ignored and cannot open a fresh bucket per attempt.
 
 ## Notes for contributors
 - This module serves as foundation for OpenCode-related server utilities.
